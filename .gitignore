@@ -2,3 +2,12 @@ pytorch-env/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+*.log
+*.out
+*.err
+*.log.*
+logs/
+*.zip
+*.tar.gz
+*.rar
+data/raw_data
