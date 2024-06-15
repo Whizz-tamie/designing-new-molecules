@@ -20,18 +20,11 @@ def __get_name_from_smiles(smiles):
                 return data['PropertyTable']['Properties'][0]['IUPACName']
             return None
         else:
-            print(f"Error fetching name for SMILES {smiles}: HTTP {response.status_code}")
+            #print(f"Error fetching name for SMILES {smiles}: HTTP {response.status_code}")
             return None
     except Exception as e:
-        print(f"Error fetching name for SMILES {smiles}: {e}")
+        #print(f"Error fetching name for SMILES {smiles}: {e}")
         return None
 
 def __get_iupac_name(smiles):
-    try:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol:
-            return Chem.MolToIUPACName(mol)
-        return None
-    except Exception as e:
-        print(f"Error generating IUPAC name for SMILES {smiles}: {e}")
-        return None
+        return ("Molecule not in PubChem Database")

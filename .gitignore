@@ -11,3 +11,10 @@ logs/
 *.tar.gz
 *.rar
 data/raw_data
+.vscode
+.env
+hpc_commands.txt
+machine.file.*
+wandb
+checkpoints
+data/preprocessed_data

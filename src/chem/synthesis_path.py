@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrow
 from rdkit import Chem
 from rdkit.Chem import Draw
+from src.chem.chem_utils import get_compound_name
 
 def print_path(df, path_id):
     # Filter the dataframe by the specified path_id
@@ -17,11 +18,11 @@ def print_path(df, path_id):
     print(f"Synthesis Path ID: {path_id}")
     for _, row in path_data.iterrows():
         print(f"Step {row['step']}:")
-        print(f"  Reactant: {row['reactant']}")
+        print(f"  Reactant: {row['reactant']} | Name: {get_compound_name(row['reactant'])}")
         if pd.notna(row['second_reactant']):
-            print(f"  Second Reactant: {row['second_reactant']}")
+            print(f"  Second Reactant: {row['second_reactant']} | Name: {get_compound_name(row['second_reactant'])}")
         print(f"  Template: {row['template']}")
-        print(f"  Product: {row['product']}")
+        print(f"  Product: {row['product']} | Name: {get_compound_name(row['product'])}")
         print(f"  QED Score: {row['qed']}")
         print("-" * 40)
 
