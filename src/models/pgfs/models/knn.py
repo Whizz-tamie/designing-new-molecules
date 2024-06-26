@@ -1,3 +1,5 @@
+#knn.py
+
 import torch
 
 class KNN:
@@ -34,9 +36,6 @@ class KNN:
 
         # Convert indices to a flat list of integers
         indices = indices.flatten().tolist()
-
-        # Debug print statement
-        print(f"indices after conversion: {indices}")
 
         # Get the k-nearest neighbors uuid
         nearest_neighbors = [valid_reactants_uuid[i] for i in indices]

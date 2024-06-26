@@ -88,7 +88,7 @@ class ActorProcedure(nn.Module):
         self.f_net = FNetwork(state_dim, template_dim)
         self.pi_net = PiNetwork(state_dim + template_dim, action_dim)
 
-    def forward(self, state, T_mask, temperature):
+    def forward(self, state, temperature, T_mask):
         """
         Forward pass through the PiNetwork.
 
@@ -100,9 +100,17 @@ class ActorProcedure(nn.Module):
             T (Tensor): Selected reaction template.
             action (Tensor): Selected action feature representation.
         """
-        T_mask = T_mask.repeat(state.size(0), 1) # Ensure T_mask matches the batch size
         T = self.f_net(state)
-        T = T * T_mask
+       
+        # Create a mask with -inf for invalid templates
+        #inf_mask = torch.where(T_mask== 1, torch.tensor(0.0), torch.tensor(float('-inf')))
+        #T = T + inf_mask
+        #T = T * T_mask
+
+        # Apply a very small value to invalid logits before softmax
+        very_small_value = -1e9
+        T = T + (1 - T_mask) * very_small_value
+
         T = F.gumbel_softmax(T, tau=temperature, hard=True)
         action = self.pi_net(torch.cat((state, T), dim=-1))
         return T, action

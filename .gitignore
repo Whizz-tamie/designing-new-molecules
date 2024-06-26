@@ -16,5 +16,9 @@ data/raw_data
 hpc_commands.txt
 machine.file.*
 wandb
-checkpoints
+checkpoint*
 data/preprocessed_data
+data/results
+data/template*
+results
+data/reactant*

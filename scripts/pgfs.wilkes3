@@ -24,7 +24,7 @@
 #! How many CPUs per task?
 #SBATCH --cpus-per-task=1
 #! How much wallclock time will be required?
-#SBATCH --time=02:00:00
+#SBATCH --time=30:00:00
 #! What types of email messages do you wish to receive?
 #SBATCH --mail-type=NONE
 #! Uncomment this to prevent the job from being requeued (e.g. if
@@ -62,7 +62,7 @@ source '/rds/user/gtj21/hpc-work/designing-new-molecules/pytorch-env/bin/activat
 application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/pgfs/train/main.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=QED_train
+EXPERIMENT_NAME=QED_train_8
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\""

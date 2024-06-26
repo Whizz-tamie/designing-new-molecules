@@ -1,9 +1,9 @@
 project: pgfs-td3
-entity: gtj21
+entity: whizz
 hyperparameters:
   model:
     state_dim: 1024          # Dimension of input state features (e.g., ECFP4 fingerprints)
-    template_dim: 64         # Dimension of template features
+    template_dim: 102         # Dimension of template features
     action_dim: 1024          # Dimension of action space
     max_action: 1.0          # Max action value
   training:
@@ -25,5 +25,5 @@ hyperparameters:
     noise_std: 0.2           # Standard deviation of noise
     noise_clip: 0.5          # Clipping value for noise
   dataset:
-    precomputed_vectors_file: '/rds/user/gtj21/hpc-work/designing-new-molecules/data/preprocessed_data/enamine_train.pkl'
-    templates_file: '/rds/user/gtj21/hpc-work/designing-new-molecules/data/preprocessed_data/rxn_set_processed.txt'
+    precomputed_vectors_file: '/rds/user/gtj21/hpc-work/designing-new-molecules/data/preprocessed_data/enamine_train_filtered.pkl'
+    templates_file: '/rds/user/gtj21/hpc-work/designing-new-molecules/data/preprocessed_data/reactions_R2_filtered.txt'

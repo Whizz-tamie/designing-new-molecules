@@ -116,7 +116,7 @@ def load_templates(file_path):
     Returns:
         list: List of SMARTS templates.
     """
-    templates = pd.read_csv(file_path, delimiter="|")["Smarts"].tolist()
+    templates = pd.read_csv(file_path, delimiter="|", names=["reaction", "Smarts"])["Smarts"].tolist()
     return templates
 
 if __name__ == "__main__":

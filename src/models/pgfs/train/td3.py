@@ -14,7 +14,7 @@ import os
 
 class TD3:
     def __init__(self, state_dim, template_dim, action_dim, max_action, gamma=0.99, tau=0.005, policy_freq=2,
-                    temperature=1.0, T_mask=None, noise_std=0.2, noise_clip=0.5, min_temp=0.1, temp_decay=0.99,
+                    temperature=1.0, noise_std=0.2, noise_clip=0.5, min_temp=0.1, temp_decay=0.99,
                     actor_lr=1e-4, critic_lr=3e-4):
         """
         Initialize the TD3 agent with actor and critic networks, target networks, and optimizers.
@@ -28,7 +28,6 @@ class TD3:
             tau (float): Soft update rate.
             policy_freq (int): Frequency of policy updates.
             temperature (float): Initial temperature parameter for Gumbel Softmax.
-            T_mask (Tensor): Mask to ensure valid templates.
             noise_std (float): Standard deviation of the noise for exploration.
             noise_clip (float): Clipping value for the noise.
             min_temp (float): Minimum temperature for Gumbel Softmax.
@@ -66,7 +65,6 @@ class TD3:
         self.tau = tau
         self.policy_freq = policy_freq
         self.temperature = temperature
-        self.T_mask = T_mask.to(self.device)
         self.noise_std = noise_std
         self.noise_clip = noise_clip
         self.min_temp = min_temp
@@ -78,21 +76,25 @@ class TD3:
         self.critic2_loss = None
         self.actor_loss = None
         self.f_net_loss = None
+        self.target_q = None
+        self.current_q1 = None
+        self.current_q2 = None
         
         self.episode_rewards = []  # Store rewards for each episode
 
-    def select_action(self, state):
+    def select_action(self, state, T_mask):
         """
         Select an action using the actor networks.
 
         Args:
-            state (np.ndarray): Current state.
+            state (torch.Tensor): Current state.
         Returns:
-            np.ndarray: Selected template.
-            np.ndarray: Selected action.
+            torch.Tensor: Selected template.
+            torch.Tensor: Selected action.
         """
         state = state.to(self.device)
-        template, action = self.actor_procedure(state, self.T_mask, self.temperature)
+        T_mask = T_mask.to(self.device)
+        template, action = self.actor_procedure(state, self.temperature, T_mask)
         self.logger.debug(f"Template and action selected for state!")
         return template, action
     
@@ -104,21 +106,23 @@ class TD3:
             replay_buffer (ReplayBuffer): Replay buffer containing past experiences.
             batch_size (int): Number of transitions to sample for training.
         """
-        self.logger.debug("Starting backward pass!")
+        self.logger.debug("Starting backward pass...")
         self.total_it += 1
 
         # Sample a batch of transitions from the replay buffer
-        state, template, action, next_state, reward, done = replay_buffer.sample(batch_size)
+        state, state_tmask, template, action, next_state, next_tmask, reward, done = replay_buffer.sample(batch_size)
         
         state = state.to(self.device)
+        state_tmask = state_tmask.to(self.device)
         template = template.to(self.device)
         action = action.to(self.device)
         next_state = next_state.to(self.device)
+        next_tmask = next_tmask.to(self.device)
         reward = reward.to(self.device)
         done = done.to(self.device)
 
         with torch.no_grad():
-            next_template, next_action = self.actor_procedure_target(next_state, self.T_mask, self.temperature)
+            next_template, next_action = self.actor_procedure_target(next_state, self.temperature, next_tmask)
             noise = (torch.randn_like(next_action) * self.noise_std).clamp(-self.noise_clip, self.noise_clip)
             next_action = (next_action + noise).clamp(-self.max_action, self.max_action)
 
@@ -126,15 +130,15 @@ class TD3:
             target_q1 = self.critic1_target(next_state, next_template, next_action)
             target_q2 = self.critic2_target(next_state, next_template, next_action)
             target_q = torch.min(target_q1, target_q2)
-            target_q = reward + ((1 - done) * self.gamma * target_q).detach()
+            self.target_q = reward + ((1 - done) * self.gamma * target_q).detach()
 
         # Get current Q-values estimates
-        current_q1 = self.critic1(state, template, action)
-        current_q2 = self.critic2(state, template, action)
+        self.current_q1 = self.critic1(state, template, action)
+        self.current_q2 = self.critic2(state, template, action)
         
         # Compute critic loss
-        self.critic1_loss = nn.MSELoss()(current_q1, target_q.detach())
-        self.critic2_loss = nn.MSELoss()(current_q2, target_q.detach())
+        self.critic1_loss = nn.MSELoss()(self.current_q1, self.target_q.detach())
+        self.critic2_loss = nn.MSELoss()(self.current_q2, self.target_q.detach())
 
         # Update critic networks
         self.critic1_optimizer.zero_grad()
@@ -153,7 +157,7 @@ class TD3:
                 p.requires_grad = False
 
             # Compute actor loss
-            template, action = self.actor_procedure(state, self.T_mask, self.temperature)
+            template, action = self.actor_procedure(state, self.temperature, state_tmask)
             self.actor_loss = -self.critic1(state, template, action).mean()
 
             # Add cross-entropy loss for f network output and templates
@@ -221,7 +225,6 @@ class TD3:
             'tau': self.tau,
             'policy_freq': self.policy_freq,
             'temperature': self.temperature,
-            'T_mask': self.T_mask,
             'noise_std': self.noise_std,
             'noise_clip': self.noise_clip,
             'min_temp': self.min_temp,
@@ -232,10 +235,13 @@ class TD3:
                 'max_size': replay_buffer.max_size,
                 'buffer': replay_buffer.buffer
             },
-            'f_net_loss': self.f_net_loss,
+            'f_net_loss': self.f_net_loss.item(),
             'actor_loss': self.actor_loss.item() if self.actor_loss is not None else None,
             'critic1_loss': self.critic1_loss.item() if self.critic1_loss is not None else None,
             'critic2_loss': self.critic2_loss.item() if self.critic2_loss is not None else None,
+            'target_q': self.target_q,
+            'current_q1': self.current_q1,
+            'current_q2': self.current_q2,
             'episode_rewards': self.episode_rewards  # Save the rewards
         }
         torch.save(checkpoint, filename)
@@ -266,7 +272,6 @@ class TD3:
         self.tau = checkpoint['tau']
         self.policy_freq = checkpoint['policy_freq']
         self.temperature = checkpoint['temperature']
-        self.T_mask = checkpoint['T_mask']
         self.noise_std = checkpoint['noise_std']
         self.noise_clip = checkpoint['noise_clip']
         self.min_temp = checkpoint['min_temp']
@@ -287,9 +292,11 @@ class TD3:
         self.actor_loss = checkpoint['actor_loss']
         self.critic1_loss = checkpoint['critic1_loss']
         self.critic2_loss = checkpoint['critic2_loss']
+        self.target_q = ['target_q']
+        self.current_q1 = ['current_q1']
+        self.current_q2 = ['current_q2']
         self.episode_rewards = checkpoint['episode_rewards']
 
         self.logger.info("Model loaded successfully!!!")
         return replay_buffer
         
-

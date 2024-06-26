@@ -22,7 +22,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #! How much wallclock time will be required?
-#SBATCH --time=5:00:00
+#SBATCH --time=30:00:00
 #! What types of email messages do you wish to receive?
 #SBATCH --mail-type=NONE
 #! Uncomment this to prevent the job from being requeued (e.g. if
@@ -106,9 +106,12 @@ CMD="$application $options"
 cd $workdir
 echo -e "Changed directory to `pwd`.\n"
 mkdir -p /rds/user/gtj21/hpc-work/designing-new-molecules/logs
+JOBNAME=$SLURM_JOB_NAME
 JOBID=$SLURM_JOB_ID
-LOGFILE="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/slurm/out.$JOBID"
-CMD="$application $options > $LOGFILE 2>&1"
+LOGFILE_STDOUT="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/slurm/$SLURM_JOB_NAME.$JOBID.out"
+LOGFILE_STDERR="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/slurm/$SLURM_JOB_NAME.$JOBID.err"
+
+CMD="$application $options > $LOGFILE_STDOUT 2> $LOGFILE_STDERR"
 
 echo -e "JobID: $JOBID\n======"
 echo "Time: `date`"
