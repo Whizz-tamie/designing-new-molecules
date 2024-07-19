@@ -1,116 +1,126 @@
 # models/actor.py
 
+import logging
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class FNetwork(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        """
-        Initialize the FNetwork with fully connected layers.
+import src.models.pgfs.logging_config as logging_config
 
-        Args:
-            input_dim (int): Dimension of input features (molecular represerntation).
-            output_dim (int): Dimension of output features (number of reaction templates).
-        Task:
-            The f network predicts the best reaction template T given the current state s_t (R_t^{(1)}).
-        """
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class FNetwork(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dims=[256, 128, 128]):
+        logger.info("Actor FNetwork initialised...")
         super(FNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, 128)
-        self.fc4 = nn.Linear(128, output_dim)
+        layers = []
+        for i in range(len(hidden_dims)):
+            layers.append(
+                nn.Linear(input_dim if i == 0 else hidden_dims[i - 1], hidden_dims[i])
+            )
+            layers.append(nn.ReLU())
+            input_dim = hidden_dims[i]  # Update input dimension for the next layer
+        layers.append(nn.Linear(hidden_dims[-1], output_dim))
+        self.network = nn.Sequential(*layers)
+
+        # Initialize weights using He initialization
+        for layer in self.network:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_uniform_(layer.weight, nonlinearity="relu")
 
     def forward(self, state):
-        """
-        Forward pass through the FNetwork.
+        output = self.network(state)
+        logger.debug(f"FNetwork output: {output}")
+        return torch.tanh(output)
 
-        Args:
-            state (torch.Tensor): Input state tensor (molecular representation).
-        Returns:
-            torch.Tensor: Output template tensor after passing through the network.
-        Task:
-            The forward method processes the input state to produce the best reaction template T.
-        """
-        state = F.relu(self.fc1(state))
-        state = F.relu(self.fc2(state))
-        state = F.relu(self.fc3(state))
-        template = torch.tanh(self.fc4(state))
-        return template
 
 class PiNetwork(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        """
-        Initialize the PiNetwork with fully connected layers.
-
-        Args:
-            input_dim (int): Dimension of input features.
-            output_dim (int): Dimension of output features.
-        Task:
-            The pi network computes the action a_t using the best reaction template T and R_t^{(1)}.
-        """
+    def __init__(self, input_dim, output_dim, hidden_dims=[256, 256, 167]):
+        logger.info("Actor PiNetwork initialised...")
         super(PiNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 167)
-        self.fc4 = nn.Linear(167, output_dim)
+        layers = []
+        for i in range(len(hidden_dims)):
+            layers.append(
+                nn.Linear(input_dim if i == 0 else hidden_dims[i - 1], hidden_dims[i])
+            )
+            layers.append(nn.ReLU())
+            input_dim = hidden_dims[i]  # Update input dimension for the next layer
+        layers.append(nn.Linear(hidden_dims[-1], output_dim))
+        self.network = nn.Sequential(*layers)
 
-    def forward(self, state_template):
-        """
-        Forward pass through the PiNetwork.
+        # Initialize weights using He initialization
+        for layer in self.network:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_uniform_(layer.weight, nonlinearity="relu")
 
-        Args:
-            state_template (torch.Tensor): Concatenated state and template tensor.
-        Returns:
-            torch.Tensor: Output action tensor after passing through the network.
-        Task:
-            The forward method processes the input state and template to produce the action a_t.
-        """
-        state_template = F.relu(self.fc1(state_template))
-        state_template = F.relu(self.fc2(state_template))
-        state_template = F.relu(self.fc3(state_template))
-        action = torch.tanh(self.fc4(state_template))
-        return action
+    def forward(self, combined_input):
+        output = self.network(combined_input)
+        logger.debug(f"PiNetwork output: {output}")
+        return torch.tanh(output)
 
-class ActorProcedure(nn.Module):
+
+class ActorNetwork(nn.Module):
     def __init__(self, state_dim, template_dim, action_dim):
-        """
-        Initialize the FNetwork and PiNetwork
-
-        Args:
-            input_dim (int): Dimension of the input features (e.g., ECFP4 fingerprints).
-            output_dim (int): Dimension of the output (number of reaction templates).
-            action_dim (int): Dimension of the action space (feature representation of reactants).
-        Task:
-            Actor procedure to select the best reaction template and action.
-        """
-        super(ActorProcedure, self).__init__()
+        super(ActorNetwork, self).__init__()
+        logger.info(
+            "ActorNetwork initialized with state_dim={}, template_dim={}, action_dim={}".format(
+                state_dim, template_dim, action_dim
+            )
+        )
         self.f_net = FNetwork(state_dim, template_dim)
         self.pi_net = PiNetwork(state_dim + template_dim, action_dim)
+        self.logits = None
 
-    def forward(self, state, temperature, T_mask):
-        """
-        Forward pass through the PiNetwork.
+    def forward(self, state, template_mask_info=None, temperature=1.0, evaluate=False):
+        logits = self.f_net(state)
+        self.logits = logits  # Save logits as an attribute
+        logger.debug(f"Logits generated by FNetwork: {logits}")
 
-        Args:
-            state (torch.Tensor): Input state tensor (molecular representation).
-            T_mask (Tensor): Mask to ensure valid templates.
-            temperature (float): Temperature parameter for Gumbel Softmax.
-        Returns:
-            T (Tensor): Selected reaction template.
-            action (Tensor): Selected action feature representation.
-        """
-        T = self.f_net(state)
-       
-        # Create a mask with -inf for invalid templates
-        #inf_mask = torch.where(T_mask== 1, torch.tensor(0.0), torch.tensor(float('-inf')))
-        #T = T + inf_mask
-        #T = T * T_mask
+        template_one_hot, template_types = self._apply_template_mask(
+            logits, template_mask_info, temperature, evaluate
+        )
+        template_index = template_one_hot.argmax(dim=-1).item()
+        logger.info(
+            f"Selected template index: {template_index}, Evaluate mode: {evaluate}"
+        )
 
-        # Apply a very small value to invalid logits before softmax
-        very_small_value = -1e9
-        T = T + (1 - T_mask) * very_small_value
+        template_index = template_one_hot.argmax(dim=-1).item()
 
-        T = F.gumbel_softmax(T, tau=temperature, hard=True)
-        action = self.pi_net(torch.cat((state, T), dim=-1))
-        return T, action
+        # Determine if bimolecular action is necessary
+        if template_types.get(template_index, "") == "bimolecular":
+            combined_input = torch.cat((state, template_one_hot), dim=-1)
+            r2_vector = self.pi_net(combined_input)
+            logger.info(
+                "Bimolecular reaction required, second reactant vector computed."
+            )
+        else:
+            r2_vector = None
+            logger.info("Unimolecular reaction or no second reactant required.")
+
+        return template_one_hot, r2_vector
+
+    def _apply_template_mask(self, logits, template_mask_info, temperature, evaluate):
+        """Applies template masking logic to logits based on the template mask info."""
+        if template_mask_info is None:
+            if evaluate:
+                return F.one_hot(logits.argmax(dim=-1), num_classes=logits.size(1)), {}
+            else:
+                return F.gumbel_softmax(logits, tau=temperature, hard=True), {}
+        else:
+            template_mask, template_types = template_mask_info
+            masked_logits = logits + (1 - template_mask) * (-1e9)  # Apply mask
+            if evaluate:
+                return (
+                    F.one_hot(
+                        masked_logits.argmax(dim=-1), num_classes=masked_logits.size(1)
+                    ),
+                    template_types,
+                )
+            else:
+                return (
+                    F.gumbel_softmax(masked_logits, tau=temperature, hard=True),
+                    template_types,
+                )

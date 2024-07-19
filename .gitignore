@@ -22,3 +22,9 @@ data/results
 data/template*
 results
 data/reactant*
+moledesign-venv/
+.pylintrc
+.pytest_cache
+coverage/
+molvenv/
+eval*/

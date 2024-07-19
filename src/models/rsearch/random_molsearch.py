@@ -11,7 +11,7 @@ import wandb
 import pickle
 from datetime import datetime
 
-log_file_name = f"Rmolsearch.log"
+log_file_name = f"Rmolsearch_uni.log"
 log_dir = "/rds/user/gtj21/hpc-work/designing-new-molecules/src/models/rsearch/logs"
 
 # Configure logging
@@ -71,7 +71,7 @@ class RandomMolSearch:
                 entity="whizz",
                 notes="random search molecule design baseline", 
                 name=experiment_name,
-                id="rsearch_v2",
+                id="rsearch_uni",
                 resume="allow"
                 )
 

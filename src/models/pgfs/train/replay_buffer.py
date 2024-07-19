@@ -1,63 +1,105 @@
-#replay_buffer.py
+# replay_buffer.py
 
-import torch
+import logging
 import random
 from collections import deque
 
+import numpy as np
+import torch
+
+import src.models.pgfs.logging_config as logging_config
+
+# Configure the logger
+logging_config.setup_logging()
+logger = logging.getLogger(__name__)
+
+
 class ReplayBuffer:
-    def __init__(self, max_size):
-        """
-        Initialize the replay buffer.
+    def __init__(self, state_dim, template_dim, r2_vec_dim, capacity=int(1e6)):
+        self.capacity = capacity
+        self.count = 0  # Tracks current number of elements
+        self.index = 0  # Tracks the index to add new data
 
-        Args:
-            max_size (int): Maximum number of transitions the buffer can hold.
-        """
-        self.max_size = max_size
-        self.buffer = deque(maxlen=self.max_size)
+        # Setup the device for tensor operations
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def add(self, state, state_tmask, template, action, next_state, next_tmask, reward, done):
-        """
-        Add a transition to the buffer.
+        # Pre-allocate memory
+        self.state_smiles = [None] * capacity
+        self.state_tensors = torch.zeros((capacity, state_dim), device=self.device)
+        self.templates = torch.zeros((capacity, template_dim), device=self.device)
+        self.r2_vectors = torch.zeros((capacity, r2_vec_dim), device=self.device)
+        self.rewards = torch.zeros((capacity, 1), device=self.device)
+        self.next_state_smiles = [None] * capacity
+        self.next_state_tensors = torch.zeros((capacity, state_dim), device=self.device)
+        self.not_dones = torch.zeros((capacity, 1), device=self.device)
 
-        Args:
-            state (torch.Tensor): The current state.
-            template (torch.Tensor): The selected template.
-            action (torch.Tensor): The action taken.
-            reward (float): The reward received.
-            next_state (torch.Tensor): The next state after the action.
-            next_tmask (torch.Tensor): The next state template mask
-            done (bool): Whether the episode is done.
-        """
-        experience = (
-            state.clone().detach() if isinstance(state, torch.Tensor) else torch.tensor(state, dtype=torch.float32),
-            state_tmask.clone().detach() if isinstance(state_tmask, torch.Tensor) else torch.tensor(state_tmask, dtype=torch.float32),
-            template.clone().detach() if isinstance(template, torch.Tensor) else torch.tensor(template, dtype=torch.float32),
-            action.clone().detach() if isinstance(action, torch.Tensor) else torch.tensor(action, dtype=torch.float32),
-            next_state.clone().detach() if isinstance(next_state, torch.Tensor) else torch.tensor(next_state, dtype=torch.float32),
-            next_tmask.clone().detach() if isinstance(next_tmask, torch.Tensor) else torch.tensor(next_tmask, dtype=torch.float32),
-            reward.clone().detach() if isinstance(reward, torch.Tensor) else torch.tensor(reward, dtype=torch.float32),
-            torch.tensor(done, dtype=torch.float32)
+        logger.info(
+            "Replay buffer created with capacity: %s, state_dim: %s, template_dim: %s, r2_vec_dim: %s",
+            capacity,
+            state_dim,
+            template_dim,
+            r2_vec_dim,
         )
-        self.buffer.append(experience)
+
+    def add(
+        self,
+        state_smiles,
+        state_obs,
+        template,
+        r2_vector,
+        reward,
+        next_state_smiles,
+        next_state_obs,
+        done,
+    ):
+        idx = self.index
+
+        # Store data in pre-allocated tensors and lists
+        self.state_smiles[idx] = state_smiles
+        self.state_tensors[idx] = torch.tensor(
+            state_obs, dtype=torch.float32, device=self.device
+        ).unsqueeze(0)
+        self.templates[idx] = template.clone().detach()
+        self.r2_vectors[idx] = r2_vector.clone().detach()
+        self.rewards[idx] = torch.tensor(
+            [reward], dtype=torch.float32, device=self.device
+        ).unsqueeze(1)
+        self.next_state_smiles[idx] = next_state_smiles
+        self.next_state_tensors[idx] = torch.tensor(
+            next_state_obs, dtype=torch.float32, device=self.device
+        ).unsqueeze(0)
+        self.not_dones[idx] = torch.tensor(
+            [1.0 - done], dtype=torch.float32, device=self.device
+        ).unsqueeze(1)
+
+        # Update index and count
+        self.index = (idx + 1) % self.capacity
+        self.count = min(self.count + 1, self.capacity)
+        logger.debug("Experience added to the buffer.")
 
     def sample(self, batch_size):
-        """
-        Sample a batch of transitions from the buffer.
+        if self.count < batch_size:
+            logger.error("Attempted to sample more elements than are in the buffer.")
+            raise ValueError("Not enough elements in the buffer to sample")
 
-        Args:
-            batch_size (int): Number of transitions to sample.
-        Returns:
-            tuple: Batches of states, template, actions, rewards, next states, and done flags.
-        """
-        batch = random.sample(self.buffer, batch_size)
-        state, state_tmask, template, action, next_state, next_tmask, reward, done = map(torch.stack, zip(*batch))
-        return state.squeeze(1), state_tmask.squeeze(1), template.squeeze(1), action.squeeze(1), next_state.squeeze(1), next_tmask.squeeze(1), reward.unsqueeze(1), done.unsqueeze(1)
+        indices = random.sample(range(self.count), batch_size)
+
+        # Return a tuple of samples moved to the appropriate device
+        return (
+            [self.state_smiles[i] for i in indices],
+            self.state_tensors[indices],
+            self.templates[indices],
+            self.r2_vectors[indices],
+            self.rewards[indices],
+            [self.next_state_smiles[i] for i in indices],
+            self.next_state_tensors[indices],
+            self.not_dones[indices],
+        )
 
     def size(self):
-        """
-        Return the current size of the buffer.
+        return self.count
 
-        Returns:
-            int: Number of transitions currently stored in the buffer.
-        """
-        return len(self.buffer)
+    def clear(self):
+        self.count = 0
+        self.index = 0
+        logger.info("Replay buffer cleared.")

@@ -23,19 +23,19 @@ def get_reaction_type(smarts):
 
 if __name__ == "__main__":
     # Load 2000 validation set reactants
-    enamine_val= "data/preprocessed_data/enamine_val_filtered.pkl"
+    enamine_val= "data/preprocessed_data/enamine_val_uni.pkl"
     with open(enamine_val, 'rb') as f:
         val = pickle.load(f)
 
     reactants = [info['smiles'] for info in val.values()]
 
     # Load reaction templates
-    file_path = "data/preprocessed_data/reactions_R2_filtered.txt"
+    file_path = "data/preprocessed_data/templates_uni.txt"
     templates = pd.read_csv(file_path, delimiter="|", header=None, names=["Reaction", "Smarts"])
     templates["Type"] = templates["Smarts"].apply(get_reaction_type)
 
 
-    search = GreedyMolSearch(reactants, templates, "greedy_search_3",
-                             "src/models/gsearch/checkpoint.pkl", "src/models/gsearch/results/Gmolsearch_results.csv",
+    search = GreedyMolSearch(reactants, templates, "greedy_search_uni",
+                             "src/models/gsearch/checkpoint_uni.pkl", "src/models/gsearch/results/Gmolsearch_results_uni.csv",
                              max_steps=5, max_reactions=8000000)
     search.run_molsearch()

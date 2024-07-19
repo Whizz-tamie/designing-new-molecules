@@ -8,7 +8,7 @@ import wandb
 import pickle
 from datetime import datetime
 
-log_file_name = f"Gmolsearch.log"
+log_file_name = f"Gmolsearch_uni.log"
 log_dir = "/rds/user/gtj21/hpc-work/designing-new-molecules/src/models/gsearch/logs"
 
 # Configure logging
@@ -64,7 +64,7 @@ class GreedyMolSearch:
                 entity="whizz",
                 notes="greedy search molecule design baseline", 
                 name=experiment_name,
-                id="gsearch_v3",
+                id="gsearch_uni",
                 resume="allow"
                 )
 

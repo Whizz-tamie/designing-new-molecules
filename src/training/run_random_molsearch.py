@@ -23,19 +23,19 @@ def get_reaction_type(smarts):
 
 if __name__ == "__main__":
     # Load 2000 validation set reactants
-    enamine_val= "data/preprocessed_data/enamine_val_filtered.pkl"
+    enamine_val= "data/preprocessed_data/enamine_val_uni.pkl"
     with open(enamine_val, 'rb') as f:
         val = pickle.load(f)
 
     reactants = [info['smiles'] for info in val.values()]
 
     # Load reaction templates
-    file_path = "data/preprocessed_data/reactions_R2_filtered.txt"
+    file_path = "data/preprocessed_data/templates_uni.txt"
     templates = pd.read_csv(file_path, delimiter="|", header=None, names=["Reaction", "Smarts"])
     templates["Type"] = templates["Smarts"].apply(get_reaction_type)
 
 
-    search = RandomMolSearch(reactants, templates, "random_search_2",
-                             "src/models/rsearch/checkpoint.pkl", "src/models/rsearch/results/Rmolsearch_results.csv",
-                             max_steps=5, max_reactions=400000, max_attempts=800000)
+    search = RandomMolSearch(reactants, templates, "random_search_uni",
+                             "src/models/rsearch/checkpoint_uni.pkl", "src/models/rsearch/results/Rmolsearch_results_uni.csv",
+                             max_steps=5, max_reactions=100000, max_attempts=200000)
     search.run_molsearch()
