@@ -106,7 +106,6 @@ class TD3Agent:
         self.max_action = self.env.unwrapped.observation_space.high[0]
         self.total_it = 0
         self.actor_loss = None
-        # self.fnet_loss = None
         self.critic_loss = None
         logger.info(
             "Training parameters set... - temp_decay: %s", self.temperature_decay
@@ -265,21 +264,11 @@ class TD3Agent:
             )
 
             # Compute actor loss
-            actor_loss = -self.critic1(state_obs, c_templates, c_r2_vectors).mean()
-
-            # Compute cross-entropy loss for f network output and templates
-
-            # logits = self.actor.logits
-            # target_template = torch.argmax(c_templates, dim=-1)
-            # logger.debug(
-            #   "Logits: %s, target_template: %s", logits.shape, target_template.shape
-            # )
-            # self.fnet_loss = F.cross_entropy(logits, target_template)
-            self.actor_loss = actor_loss  # No side losses
+            self.actor_loss = -self.critic1(state_obs, c_templates, c_r2_vectors).mean()
 
             # Optimize the actor
             self.actor_optimizer.zero_grad()
-            actor_loss.backward()
+            self.actor_loss.backward()
             self.actor_optimizer.step()
 
             # Update the frozen target models
@@ -288,18 +277,14 @@ class TD3Agent:
             self._update_target(self.actor, self.actor_target, self.tau)
 
             logger.info(
-                "Actor loss: %s, FNet loss: %s",
+                "Actor loss: %s",
                 self.actor_loss.item(),
-                self.fnet_loss.item(),
             )
 
         # Log or return values
         return {
             "total_iterations": self.total_it,
             "critic_loss": self.critic_loss.item(),
-            # "fNet_loss": (
-            # self.fnet_loss if self.fnet_loss is None else self.fnet_loss.item()
-            # ),
             "actor_loss": (
                 self.actor_loss if self.actor_loss is None else self.actor_loss.item()
             ),
@@ -324,7 +309,6 @@ class TD3Agent:
             "critic_optimizer_state_dict": self.critic_optimizer.state_dict(),
             "total_it": self.total_it,
             "temperature": self.temperature,
-            # "fnet_loss": self.fnet_loss.item() if self.fnet_loss else None,
             "actor_loss": self.actor_loss.item() if self.actor_loss else None,
             "critic_loss": self.critic_loss.item() if self.critic_loss else None,
             "steps_done": steps_done,
@@ -347,7 +331,6 @@ class TD3Agent:
         self.critic_optimizer.load_state_dict(checkpoint["critic_optimizer_state_dict"])
         self.total_it = checkpoint.get("total_it", 0)
         self.temperature = checkpoint.get("temperature", 1.0)
-        # self.fnet_loss = checkpoint.get("fnet_loss", None)
         self.actor_loss = checkpoint.get("actor_loss", None)
         self.critic_loss = checkpoint.get("critic_loss", None)
         steps_done = checkpoint.get("steps_done", 0)

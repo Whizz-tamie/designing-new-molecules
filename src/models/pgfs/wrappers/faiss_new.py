@@ -140,7 +140,7 @@ class KNNWrapper(gym.ActionWrapper):
         return action
 
     def _process_knn_search(
-        self, knn_index, reactant_vector, template_index, k=5, epsilon=0.1
+        self, knn_index, reactant_vector, template_index, k=5, epsilon=0.3
     ):
         logger.debug("Initiating KNN search for template %s", template_index)
 

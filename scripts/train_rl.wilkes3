@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J td3_QED2_run
+#SBATCH -J td3_deltaQED_run
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-GTJ21-SL2-GPU
 #! How many whole nodes should be allocated?
@@ -24,7 +24,7 @@
 #! How many CPUs per task?
 #SBATCH --cpus-per-task=1
 #! How much wallclock time will be required?
-#SBATCH --time=03:00:00
+#SBATCH --time=24:00:00
 #! What types of email messages do you wish to receive?
 #SBATCH --mail-type=NONE
 #! Uncomment this to prevent the job from being requeued (e.g. if
@@ -63,7 +63,7 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/pgfs/train/main_script.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=QED_v2
+EXPERIMENT_NAME=deltaQED_v0
 PROFILE="true"  # Set to "true" to enable profiling
 
 #! Run options for the application:
@@ -121,8 +121,8 @@ echo -e "Changed directory to `pwd`.\n"
 mkdir -p /rds/user/gtj21/hpc-work/designing-new-molecules/logs/slurm
 JOBNAME=$SLURM_JOB_NAME
 JOBID=$SLURM_JOB_ID
-LOGFILE_STDOUT="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/slurm/$SLURM_JOB_NAME.$JOBID.out"
-LOGFILE_STDERR="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/slurm/$SLURM_JOB_NAME.$JOBID.err"
+LOGFILE_STDOUT="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/recent/slurm/$SLURM_JOB_NAME.$JOBID.out"
+LOGFILE_STDERR="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/recent/slurm/$SLURM_JOB_NAME.$JOBID.err"
 
 CMD="$application $options > $LOGFILE_STDOUT 2> $LOGFILE_STDERR"
 

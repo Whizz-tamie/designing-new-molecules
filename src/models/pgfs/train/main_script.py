@@ -3,7 +3,6 @@
 import argparse
 import cProfile
 import logging
-import math
 import os
 import pstats
 
@@ -33,6 +32,8 @@ def eval_policy(policy, eval_env, seed, experiment_name, eval_count, eval_episod
     steps_done = 0
     avg_reward = 0.0
     max_reward = 0.0
+    avg_qed = 0.0
+    max_qed = 0.0
     for eval_episode in range(eval_episodes):
         logger.info("Evaluation episode %s", eval_episode + 1)
 
@@ -47,11 +48,13 @@ def eval_policy(policy, eval_env, seed, experiment_name, eval_count, eval_episod
 
             action = policy.get_action(state, evaluate=True)
             eval_env.enable()
-            state, reward, terminated, truncated, _ = eval_env.step(action)
+            state, reward, terminated, truncated, next_info = eval_env.step(action)
             done = terminated or truncated
             episode_reward += reward
             avg_reward += reward
             max_reward = max(max_reward, reward)
+            max_qed = max(max_qed, next_info["QED"])
+            avg_qed += next_info["QED"]
 
         eval_env.unwrapped.render(mode="console")
 
@@ -61,17 +64,21 @@ def eval_policy(policy, eval_env, seed, experiment_name, eval_count, eval_episod
         )
         eval_env.unwrapped.close()
 
-    avg_reward /= eval_episodes
+    avg_reward /= steps_done
+    avg_qed /= steps_done
     logger.info(
-        "Ending evaluation  %s over %s episodes - Average_reward: %.3f",
+        "Ending evaluation  %s over %s episodes - Average_reward: %.3f, Average_QED: %.3f",
         eval_count,
         eval_episodes,
         avg_reward,
+        avg_qed,
     )
     wandb.log(
         {
             "eval_count": eval_count,
             "avg_eval_reward": avg_reward,
+            "avg_eval_qed": avg_qed,
+            "max_eval_qed": max_qed,
             "max_eval_reward": max_reward,
         }
     )
@@ -113,7 +120,7 @@ def setup_training(config_path, experiment_name):
 
 def initialize_training(config):
     env, eval_env, replay_buffer, agent = initialize_components(config)
-    checkpoint_dir = "src/models/pgfs/checkpoints_qedrun2/"
+    checkpoint_dir = "src/models/pgfs/checkpoints_deltaqedrun/"
     os.makedirs(checkpoint_dir, exist_ok=True)
     latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
 
@@ -162,6 +169,8 @@ def train(
         episode_timesteps = 0
         highest_reward = 0
         episode_count += 1
+        max_qed = 0
+        total_episode_qed = 0
 
         while not done:
             steps_done += 1
@@ -206,11 +215,15 @@ def train(
             info = next_info
             episode_reward += reward
             highest_reward = max(highest_reward, reward)
+            qed = info["QED"]
+            max_qed = max(max_qed, qed)
+            total_episode_qed += qed
 
             wandb.log(
                 {
                     "steps_done": steps_done,
                     "reward_per_step": reward,
+                    "qed_per_step": qed,
                     "episode": episode_count,
                 }
             )
@@ -250,6 +263,9 @@ def train(
         avg_episode_reward = (
             episode_reward / episode_timesteps if episode_timesteps > 0 else 0
         )
+        avg_episode_qed = (
+            total_episode_qed / episode_timesteps if episode_timesteps > 0 else 0
+        )
         logger.info(
             "Total Timesteps: %s, Total Episodes: %s, Episode Timesteps: %s, Episode Reward: %.3f, Episode Avg reward: %.3f, Episode Highest reward: %.3f",
             steps_done,
@@ -268,6 +284,8 @@ def train(
                 "average_episode_reward": avg_episode_reward,
                 "max_episode_reward": highest_reward,
                 "episode_length": episode_timesteps,
+                "max_episode_qed": max_qed,
+                "avg_episode_qed": avg_episode_qed,
                 "buffer_size": replay_buffer.size(),
             }
         )

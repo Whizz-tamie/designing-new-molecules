@@ -10,7 +10,7 @@ is_logging_setup = False
 
 def setup_logging(
     filename,
-    log_dir="/rds/user/gtj21/hpc-work/designing-new-molecules/logs",
+    log_dir="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/recent/logs",
 ):
     global is_logging_setup
     if is_logging_setup:

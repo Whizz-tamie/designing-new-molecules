@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J RL_td3
+#SBATCH -J RL_td3_QED2
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-GTJ21-SL2-GPU
 #! How many whole nodes should be allocated?
@@ -63,7 +63,7 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv/
 application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/pgfs/train/main_script.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=reward_shaping_test
+EXPERIMENT_NAME=deltaQED_test_1
 PROFILE="true"  # Set to "true" to enable profiling
 
 #! Run options for the application:

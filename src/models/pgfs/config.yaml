@@ -1,6 +1,6 @@
-project: DESIGN_NEW_MOLECULES_RL
+project: RL_NEW_MOLECULE_DESIGN
 entity: whizz
-id: QED_run.2
+id: deltaQED_run.0
 hyperparameters:
   training:
     gamma: 0.99              # Discount factor
@@ -8,7 +8,7 @@ hyperparameters:
     batch_size: 32          # Minibatch size for training
     capacity: 500000        # Max size for replay buffer
     start_timesteps: 3000   # Number of timesteps before training
-    max_timesteps: 200000       # Number of timesteps
+    max_timesteps: 500000       # Number of timesteps
     max_steps: 5             # Max steps per episode
     policy_freq: 2           # Frequency of policy updates
     seed: 42                 # Random seed

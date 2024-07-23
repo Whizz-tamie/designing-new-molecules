@@ -123,7 +123,9 @@ class ActorNetwork(nn.Module):
             batch_template_types = None
 
         # Initialize r2_vector with zeros for all samples
-        r2_vector = torch.zeros(state.size(0), self.pi_net.network[-1].out_features)
+        r2_vector = torch.zeros(
+            state.size(0), self.pi_net.network[-1].out_features, device=state.device
+        )
 
         if is_bimolecular.any():
             logger.debug("Bimolecular templates identified, activating PiNetwork...")
