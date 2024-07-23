@@ -1,9 +1,11 @@
 # td3_agent.py
 
 import logging
+import math
 import pickle
 from copy import deepcopy
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -31,7 +33,8 @@ class TD3Agent:
         policy_freq=2,
         temperature_start=1.0,
         temperature_end=0.1,
-        temperature_decay=0.99,
+        start_timesteps=3000,
+        max_timesteps=1000000,
     ):
         self.env = env
         self.state_dim = env.unwrapped.observation_space.shape[0]
@@ -50,7 +53,8 @@ class TD3Agent:
             policy_freq,
             temperature_start,
             temperature_end,
-            temperature_decay,
+            start_timesteps,
+            max_timesteps,
         )
         logger.info("TD3Agent initialized with environment and hyperparameters.")
 
@@ -84,7 +88,8 @@ class TD3Agent:
         policy_freq,
         temperature_start,
         temperature_end,
-        temperature_decay,
+        start_timesteps,
+        max_timesteps,
     ):
         self.gamma = gamma
         self.tau = tau
@@ -94,12 +99,18 @@ class TD3Agent:
         self.policy_freq = policy_freq
         self.temperature = temperature_start
         self.temperature_end = temperature_end
-        self.temperature_decay = temperature_decay
+        self.temperature_decay = math.pow(
+            (temperature_end / temperature_start),
+            (1 / (max_timesteps - start_timesteps)),
+        )
         self.max_action = self.env.unwrapped.observation_space.high[0]
         self.total_it = 0
         self.actor_loss = None
-        self.fnet_loss = None
-        logger.info("Training parameters set...")
+        # self.fnet_loss = None
+        self.critic_loss = None
+        logger.info(
+            "Training parameters set... - temp_decay: %s", self.temperature_decay
+        )
 
     def get_action(self, state, evaluate=False):
         logger.debug("Policy searching for action...")
@@ -118,6 +129,11 @@ class TD3Agent:
                 template_mask.unsqueeze(0).to(device),
                 template_types.to(device),
             )
+        if evaluate:
+            self.actor.eval()  # Set to evaluation mode for consistent behavior
+        else:
+            self.actor.train()  # Ensure it is in training mode
+
         with torch.no_grad():
             template, r2_vector = self.actor(
                 state, template_mask_info, self.temperature, evaluate=evaluate
@@ -136,6 +152,9 @@ class TD3Agent:
 
     def train(self, replay_buffer, batch_size=32):
         """Train method to update the actor and critic networks."""
+        self.actor.train()
+        self.critic1.train()
+        self.critic2.train()
 
         self.total_it += 1
         logger.debug("Training iteration %s...", self.total_it)
@@ -218,20 +237,20 @@ class TD3Agent:
         current_Q2 = self.critic2(state_obs, templates, r2_vectors)
 
         # Compute critic loss
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
+        self.critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(
             current_Q2, target_Q
         )
 
         # Optimize the critics
         self.critic_optimizer.zero_grad()
-        critic_loss.backward()
+        self.critic_loss.backward()
         self.critic_optimizer.step()
 
         logger.info(
             "Target Q-value: %s, Curent Q-values: %s, Critic loss: %s",
             target_Q.mean().item(),
             current_Q1.mean().item(),
-            critic_loss.item(),
+            self.critic_loss.item(),
         )
 
         # Delayed policy updates
@@ -250,13 +269,13 @@ class TD3Agent:
 
             # Compute cross-entropy loss for f network output and templates
 
-            logits = self.actor.logits
-            target_template = torch.argmax(c_templates, dim=-1)
-            logger.debug(
-                "Logits: %s, target_template: %s", logits.shape, target_template.shape
-            )
-            self.fnet_loss = F.cross_entropy(logits, target_template)
-            self.actor_loss = actor_loss + self.fnet_loss
+            # logits = self.actor.logits
+            # target_template = torch.argmax(c_templates, dim=-1)
+            # logger.debug(
+            #   "Logits: %s, target_template: %s", logits.shape, target_template.shape
+            # )
+            # self.fnet_loss = F.cross_entropy(logits, target_template)
+            self.actor_loss = actor_loss  # No side losses
 
             # Optimize the actor
             self.actor_optimizer.zero_grad()
@@ -277,15 +296,16 @@ class TD3Agent:
         # Log or return values
         return {
             "total_iterations": self.total_it,
-            "critic_loss": critic_loss.item(),
-            "fNet_loss": (
-                self.fnet_loss if self.fnet_loss is None else self.fnet_loss.item()
-            ),
+            "critic_loss": self.critic_loss.item(),
+            # "fNet_loss": (
+            # self.fnet_loss if self.fnet_loss is None else self.fnet_loss.item()
+            # ),
             "actor_loss": (
                 self.actor_loss if self.actor_loss is None else self.actor_loss.item()
             ),
             "current_q_values": current_Q1.mean().item(),
             "target_q_values": target_Q.mean().item(),
+            "temperature": self.temperature,
         }
 
     def _update_target(self, source, target, tau):
@@ -304,6 +324,9 @@ class TD3Agent:
             "critic_optimizer_state_dict": self.critic_optimizer.state_dict(),
             "total_it": self.total_it,
             "temperature": self.temperature,
+            # "fnet_loss": self.fnet_loss.item() if self.fnet_loss else None,
+            "actor_loss": self.actor_loss.item() if self.actor_loss else None,
+            "critic_loss": self.critic_loss.item() if self.critic_loss else None,
             "steps_done": steps_done,
             "episode_count": episode_count,
             "replay_buffer": replay_buffer,
@@ -324,10 +347,12 @@ class TD3Agent:
         self.critic_optimizer.load_state_dict(checkpoint["critic_optimizer_state_dict"])
         self.total_it = checkpoint.get("total_it", 0)
         self.temperature = checkpoint.get("temperature", 1.0)
+        # self.fnet_loss = checkpoint.get("fnet_loss", None)
+        self.actor_loss = checkpoint.get("actor_loss", None)
+        self.critic_loss = checkpoint.get("critic_loss", None)
         steps_done = checkpoint.get("steps_done", 0)
         episode_count = checkpoint.get("episode_count", 0)
-        replay_buffer = pickle.loads(
-            checkpoint["replay_buffer"]
-        )  # Deserialize replay buffer
+        replay_buffer = checkpoint["replay_buffer"]
+
         logger.info("Model and training state loaded from %s", filename)
         return steps_done, episode_count, replay_buffer

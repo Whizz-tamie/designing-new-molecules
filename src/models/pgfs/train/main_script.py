@@ -3,9 +3,9 @@
 import argparse
 import cProfile
 import logging
+import math
 import os
 import pstats
-from datetime import datetime
 
 import torch
 
@@ -22,13 +22,17 @@ from src.models.pgfs.utility.setup_module import (
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Add requirement for wandb core
+wandb.require("core")
 
-def eval_policy(policy, eval_env, seed, eval_count, eval_episodes=10):
+
+def eval_policy(policy, eval_env, seed, experiment_name, eval_count, eval_episodes=10):
     logger.debug("Starting current policy evaluation...")
     policy.env = eval_env
 
     steps_done = 0
     avg_reward = 0.0
+    max_reward = 0.0
     for eval_episode in range(eval_episodes):
         logger.info("Evaluation episode %s", eval_episode + 1)
 
@@ -36,7 +40,6 @@ def eval_policy(policy, eval_env, seed, eval_count, eval_episodes=10):
         done = False
         episode_timesteps = 0
         episode_reward = 0
-        highest_reward = 0
 
         while not done:
             steps_done += 1
@@ -48,16 +51,15 @@ def eval_policy(policy, eval_env, seed, eval_count, eval_episodes=10):
             done = terminated or truncated
             episode_reward += reward
             avg_reward += reward
-            highest_reward = max(highest_reward, reward)
+            max_reward = max(max_reward, reward)
 
         eval_env.unwrapped.render(mode="console")
 
-        if (eval_episode + 1) == eval_episodes:
-            eval_env.unwrapped.render(
-                mode="human",
-                save_path=f"eval_results/Eval{eval_count}_episode{eval_episode + 1}.png",
-            )
-            eval_env.unwrapped.close()
+        eval_env.unwrapped.render(
+            mode="human",
+            save_path=f"eval_results/{experiment_name}/Eval{eval_count}_episode{eval_episode + 1}.png",
+        )
+        eval_env.unwrapped.close()
 
     avg_reward /= eval_episodes
     logger.info(
@@ -69,10 +71,36 @@ def eval_policy(policy, eval_env, seed, eval_count, eval_episodes=10):
     wandb.log(
         {
             "eval_count": eval_count,
-            "eval_avg_reward": avg_reward,
-            "steps_done (eval)": steps_done,
+            "avg_eval_reward": avg_reward,
+            "max_eval_reward": max_reward,
         }
     )
+
+
+def prune_checkpoints(directory, keep_last_n=5):
+    """
+    Prune older checkpoints, keeping only the last `keep_last_n` files based on modification time.
+    """
+    # List all checkpoint files in the directory that end with '.pth'
+    checkpoints = [
+        os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".tar")
+    ]
+    checkpoints.sort(
+        key=os.path.getmtime, reverse=True
+    )  # Sort by modification time, newest first
+
+    # If there are fewer files than the keep limit, log this and exit function
+    if len(checkpoints) <= keep_last_n:
+        logger.info(
+            "Not enough checkpoints to prune: found only %d checkpoints.",
+            len(checkpoints),
+        )
+        return
+
+    # Remove older checkpoints that are beyond the keep_last_n limit
+    for checkpoint in checkpoints[keep_last_n:]:
+        os.remove(checkpoint)
+        logger.info(f"Pruned older checkpoint: {checkpoint}")
 
 
 def setup_training(config_path, experiment_name):
@@ -85,7 +113,7 @@ def setup_training(config_path, experiment_name):
 
 def initialize_training(config):
     env, eval_env, replay_buffer, agent = initialize_components(config)
-    checkpoint_dir = "src/models/pgfs/checkpoints/"
+    checkpoint_dir = "src/models/pgfs/checkpoints_qedrun2/"
     os.makedirs(checkpoint_dir, exist_ok=True)
     latest_checkpoint = find_latest_checkpoint(checkpoint_dir)
 
@@ -108,6 +136,7 @@ def initialize_training(config):
 
 
 def train(
+    experiment_name,
     seed,
     env,
     eval_env,
@@ -194,23 +223,29 @@ def train(
 
                 if steps_done % int(float(eval_freq)) == 0:
                     logger.info("Evaluating policy on validation set...")
-                    eval_policy(agent, eval_env, seed, eval_count=eval_count)
+                    eval_policy(agent, eval_env, seed, experiment_name, eval_count)
                     eval_count += 1
 
                 if episode_count % int(float(save_freq)) == 0:
                     checkpoint_path = os.path.join(
-                        checkpoint_dir, f"checkpoint_{episode_count}.pth"
+                        checkpoint_dir, f"checkpoint_{episode_count}.tar"
                     )
                     agent.save_model(
                         checkpoint_path, steps_done, episode_count, replay_buffer
                     )
                     logger.info(f"Saved checkpoint at episode {episode_count}")
+                    prune_checkpoints(checkpoint_dir, keep_last_n=5)
 
-                # Anneal the temperature parameter
-                if agent.temperature > agent.temperature_end:
-                    agent.temperature *= agent.temperature_decay
-                    agent.temperature = max(agent.temperature, agent.temperature_end)
-                    logger.info("Temperature annealed to: %s", agent.temperature)
+                    # Anneal the temperature parameter
+                logger.debug(
+                    "Current temperature: %s, decay: %s",
+                    agent.temperature,
+                    agent.temperature_decay,
+                )
+
+                agent.temperature *= agent.temperature_decay
+                agent.temperature = max(agent.temperature, agent.temperature_end)
+                logger.info("Temperature annealed to: %s", agent.temperature)
 
         avg_episode_reward = (
             episode_reward / episode_timesteps if episode_timesteps > 0 else 0
@@ -240,7 +275,6 @@ def train(
     final_model_path = os.path.join(checkpoint_dir, "final_model.pth")
     agent.save_model(final_model_path, steps_done, episode_count, replay_buffer)
     logger.info("Saved final model.")
-    wandb.finish()
 
 
 def main(experiment_name, profile=False, output_file=None):
@@ -269,6 +303,7 @@ def main(experiment_name, profile=False, output_file=None):
 
     try:
         train(
+            experiment_name,
             seed,
             env,
             eval_env,
@@ -305,7 +340,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     # Configure logger
-    setup_logging()
+    setup_logging(args.experiment_name)
     logger = logging.getLogger(__name__)
 
-    main(args.experiment_name, args.profile, args.output_file)
+    try:
+        main(args.experiment_name, args.profile, args.output_file)
+    except Exception as e:
+        logger.error(f"An error occurred during training: {e}", exc_info=True)
+        wandb.log({"error": str(e)})

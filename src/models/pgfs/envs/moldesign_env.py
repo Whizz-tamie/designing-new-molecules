@@ -1,5 +1,3 @@
-# molecule_design_env.py
-
 import logging
 import os
 import pickle
@@ -9,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from gymnasium import spaces
 from rdkit import Chem
-from rdkit.Chem import QED, AllChem
+from rdkit.Chem import QED, AllChem, DataStructs, Draw
 from rdkit.DataStructs.cDataStructs import ExplicitBitVect
 
 from src.models.pgfs.utility.reaction_manager import ReactionManager
@@ -50,6 +48,8 @@ class MoleculeDesignEnv(gym.Env):
 
         # Variables for reward function
         self.previous_qed = 0.0
+        self.epsilon = 0.1  # reward for longer synthesis route
+        self.penalty = -1  # Penalty factor for invalid molecules
 
         logger.info("MoleculeDesignEnv instance created...")
 
@@ -118,21 +118,21 @@ class MoleculeDesignEnv(gym.Env):
         fpgen = AllChem.GetMorganGenerator(radius=2, fpSize=1024)
         fingerprint = fpgen.GetFingerprint(mol)
 
-        logger.debug("Getting the observation for reatant: %s", smiles)
+        logger.debug("Getting the observation for reactant: %s", smiles)
 
         return np.array(fingerprint, dtype=np.float32)
 
     def _get_info(self):
         """Provides auxiliary information about the current state."""
         logger.debug(
-            "Getting auxillary information for reactant: %s", self.current_state
+            "Getting auxiliary information for reactant: %s", self.current_state
         )
         if self.current_state is None:
-            return {"SMILES": None, "QED": 0.0}
+            return {"SMILES": None, "QED": 0}
 
         try:
             mol = self._validate_smiles(self.current_state)
-            qed = QED.qed(mol) if mol else 0.0
+            qed = QED.qed(mol) if mol else 0
             return {"SMILES": self.current_state, "QED": qed}
         except Exception as e:
             logger.error(
@@ -140,7 +140,7 @@ class MoleculeDesignEnv(gym.Env):
                 self.current_state,
                 str(e),
             )
-        return {"SMILES": self.current_state, "QED": 0}
+            return {"SMILES": self.current_state, "QED": 0}
 
     def step(self, action):
         logger.debug("Starting the synthesis route...")
@@ -157,6 +157,8 @@ class MoleculeDesignEnv(gym.Env):
             template = self.templates.get(template_index)
             if not template:
                 raise ValueError("Template index %s out of range." % template_index)
+
+            self.previous_qed = self._get_info()["QED"]
 
             new_state = self.reaction_manager.apply_reaction(
                 self.current_state, template["smarts"], reactant
@@ -180,17 +182,10 @@ class MoleculeDesignEnv(gym.Env):
                     self.steps_log[self.current_step],
                 )
 
-            self.previous_qed = self._get_info()["QED"]
             self.current_state = new_state
 
             observation = self._get_obs()
             reward = self._get_reward()
-            logger.debug(
-                "Current QED: %s, Previous QED: %s, reward: %s",
-                self._get_info()["QED"],
-                self.previous_qed,
-                reward,
-            )
             terminated = self.current_step >= self.max_steps
             truncated = not self.reaction_manager.get_mask(new_state).any()
             info = self._get_info()
@@ -206,9 +201,10 @@ class MoleculeDesignEnv(gym.Env):
         if mol:
             current_qed = self._get_info()["QED"]
             delta_qed = current_qed - self.previous_qed
-            reward = delta_qed
+
+            reward = delta_qed + self.epsilon
         else:
-            reward = 0
+            reward = self.penalty  # Penalty for invalid molecule
 
         return reward
 

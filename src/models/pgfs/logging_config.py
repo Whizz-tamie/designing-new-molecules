@@ -8,7 +8,10 @@ from logging.handlers import RotatingFileHandler
 is_logging_setup = False
 
 
-def setup_logging(log_dir="/rds/user/gtj21/hpc-work/designing-new-molecules/logs"):
+def setup_logging(
+    filename,
+    log_dir="/rds/user/gtj21/hpc-work/designing-new-molecules/logs",
+):
     global is_logging_setup
     if is_logging_setup:
         return
@@ -17,7 +20,7 @@ def setup_logging(log_dir="/rds/user/gtj21/hpc-work/designing-new-molecules/logs
     os.makedirs(log_dir, exist_ok=True)
 
     # Determine the log file name
-    log_file_name = f"moldesign_traintd3_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_file_name = f"{filename}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     full_log_path = os.path.join(log_dir, log_file_name)
 
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -55,8 +58,3 @@ def setup_logging(log_dir="/rds/user/gtj21/hpc-work/designing-new-molecules/logs
     # Log that the logging has been set up
     root_logger.info(f"Logging setup complete. Log file: {log_file_name}")
     root_logger.info(f" New run started at {datetime.now()}")
-
-
-# Ensure this script sets up logging when it runs
-if __name__ == "__main__":
-    setup_logging()

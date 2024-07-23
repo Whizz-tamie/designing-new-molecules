@@ -1,10 +1,13 @@
 import logging
+import random
 
 import faiss
 import faiss.contrib.torch_utils
 import gymnasium as gym
 import numpy as np
 import torch
+from rdkit import Chem
+from rdkit.Chem import QED
 
 # Configure the logger
 logger = logging.getLogger(__name__)
@@ -13,7 +16,7 @@ logger = logging.getLogger(__name__)
 class KNNWrapper(gym.ActionWrapper):
     def __init__(self, env, enabled=True):
         super(KNNWrapper, self).__init__(env)
-        logger.info("KNNWrapper initiated...")
+        logger.info("New KNNWrapper initiated...")
 
         self.enabled = enabled
         self.reactants = (
@@ -104,9 +107,15 @@ class KNNWrapper(gym.ActionWrapper):
     def action(self, action):
         if self.enabled:
             template_one_hot, reactant_vector = action
+            logger.debug("r2_tanh: %s", torch.unique(reactant_vector))
 
             # Ensure the output is binary
             reactant_vector = (reactant_vector >= 0).float()
+            logger.debug(
+                "r2_vector converted to binary: %s, shape: %s",
+                torch.unique(reactant_vector),
+                reactant_vector.shape,
+            )
 
             template_index = torch.argmax(template_one_hot).item()
             self._ensure_index_initialized(template_index)
@@ -130,7 +139,9 @@ class KNNWrapper(gym.ActionWrapper):
             )
         return action
 
-    def _process_knn_search(self, knn_index, reactant_vector, template_index):
+    def _process_knn_search(
+        self, knn_index, reactant_vector, template_index, k=5, epsilon=0.1
+    ):
         logger.debug("Initiating KNN search for template %s", template_index)
 
         if knn_index is None or torch.all(reactant_vector.eq(0)):
@@ -146,7 +157,7 @@ class KNNWrapper(gym.ActionWrapper):
                 if self.use_gpu
                 else reactant_vector.cpu().numpy()
             )
-            distances, indices = knn_index.search(query_vector, 1)
+            distances, indices = knn_index.search(query_vector, k)
             logger.debug("indices: %s", indices.size)
 
             if indices.size == 0:
@@ -156,17 +167,41 @@ class KNNWrapper(gym.ActionWrapper):
                 )
                 return (template_index, None)
 
-            nearest_reactant_index = indices[0][0]
             valid_reactants = self.env.unwrapped.reaction_manager.get_valid_reactants(
                 template_index
             )
-            nearest_reactant = valid_reactants[nearest_reactant_index]
-            logger.info(
-                "Returning transformed action - Template index: %s, Nearest reactant: %s",
-                template_index,
-                nearest_reactant,
-            )
-            return (template_index, nearest_reactant)
+            top_reactants = [valid_reactants[idx] for idx in indices[0]]
+
+            # Epsilon-greedy selection
+            if random.random() < epsilon:
+                # Exploration: Select a random reactant from the top K neighbors
+                selected_reactant = random.choice(top_reactants)
+                logger.info(
+                    "Exploration: Randomly selected reactant for template %s: %s",
+                    template_index,
+                    selected_reactant,
+                )
+            else:
+                # Exploitation: Select the best reactant based on QED or other criteria
+                best_reactant = None
+                best_score = -np.inf
+                for reactant in top_reactants:
+                    mol = Chem.MolFromSmiles(reactant)
+                    qed = QED.qed(mol) if mol else 0
+                    # Combine QED with distance-based score (or any other criteria)
+                    score = qed - distances[0][top_reactants.index(reactant)]
+                    if score > best_score:
+                        best_score = score
+                        best_reactant = reactant
+
+                selected_reactant = best_reactant
+                logger.info(
+                    "Exploitation: Best reactant selected for template %s: %s",
+                    template_index,
+                    selected_reactant,
+                )
+
+            return (template_index, selected_reactant)
 
         except Exception as e:
             logger.error(

@@ -26,5 +26,9 @@ moledesign-venv/
 .pylintrc
 .pytest_cache
 coverage/
+.coverage
 molvenv/
 eval*/
+op.txt
+queue*
+profiles/

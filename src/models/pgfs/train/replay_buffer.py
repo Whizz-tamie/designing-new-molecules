@@ -7,10 +7,7 @@ from collections import deque
 import numpy as np
 import torch
 
-import src.models.pgfs.logging_config as logging_config
-
 # Configure the logger
-logging_config.setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -82,7 +79,8 @@ class ReplayBuffer:
             logger.error("Attempted to sample more elements than are in the buffer.")
             raise ValueError("Not enough elements in the buffer to sample")
 
-        indices = random.sample(range(self.count), batch_size)
+        # indices = random.sample(range(self.count), batch_size)
+        indices = np.random.randint(0, self.count, size=batch_size)
 
         # Return a tuple of samples moved to the appropriate device
         return (

@@ -10,7 +10,7 @@ import yaml
 import wandb
 from src.models.pgfs.train.replay_buffer import ReplayBuffer
 from src.models.pgfs.train.td3_agent import TD3Agent
-from src.models.pgfs.wrappers.faiss_knn import KNNWrapper
+from src.models.pgfs.wrappers.faiss_new import KNNWrapper
 
 # Configure the logger
 logger = logging.getLogger(__name__)
@@ -49,6 +49,8 @@ def setup_wandb(config, experiment_name):
             tags=["pgfs", "td3", "QED"],
             config=config["hyperparameters"],
             name=experiment_name,
+            job_type="training",
+            save_code=True,
             id=config["id"],
             resume="allow",
         )
@@ -87,7 +89,8 @@ def initialize_agent(env, config):
             config["training"]["policy_freq"],
             config["temperature"]["initial_temperature"],
             config["temperature"]["min_temperature"],
-            config["temperature"]["temp_decay"],
+            config["training"]["start_timesteps"],
+            config["training"]["max_timesteps"],
         )
         logger.info("Agent initialized successfully.")
         return agent

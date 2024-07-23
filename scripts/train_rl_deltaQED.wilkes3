@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J RL_td3
+#SBATCH -J td3_scaled_QED
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-GTJ21-SL2-GPU
 #! How many whole nodes should be allocated?
@@ -24,7 +24,7 @@
 #! How many CPUs per task?
 #SBATCH --cpus-per-task=1
 #! How much wallclock time will be required?
-#SBATCH --time=02:00:00
+#SBATCH --time=36:00:00
 #! What types of email messages do you wish to receive?
 #SBATCH --mail-type=NONE
 #! Uncomment this to prevent the job from being requeued (e.g. if
@@ -56,14 +56,14 @@ module load cuda/12.1 intel/mkl/2020.4
 
 source /home/${USER}/.bashrc
 source /rds/user/gtj21/hpc-work/miniconda3/etc/profile.d/conda.sh
-conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv/
+conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 #! Insert additional module load commands after this line if needed:
 
 #! Full path to application executable: 
 application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/pgfs/train/main_script.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=reward_shaping_test
+EXPERIMENT_NAME=scaled_QED_v1
 PROFILE="true"  # Set to "true" to enable profiling
 
 #! Run options for the application:

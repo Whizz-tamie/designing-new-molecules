@@ -1,26 +1,25 @@
-project: Designing-New-Molecules
+project: DESIGN_NEW_MOLECULES_RL
 entity: whizz
-id:  train_1
+id: QED_run.2
 hyperparameters:
   training:
     gamma: 0.99              # Discount factor
     tau: 0.005               # Soft update rate
-    batch_size: 32           # Minibatch size for training
+    batch_size: 32          # Minibatch size for training
     capacity: 500000        # Max size for replay buffer
     start_timesteps: 3000   # Number of timesteps before training
-    max_timesteps: 100000       # Number of timesteps
+    max_timesteps: 200000       # Number of timesteps
     max_steps: 5             # Max steps per episode
     policy_freq: 2           # Frequency of policy updates
     seed: 42                 # Random seed
-    eval_freq: 5e3          # Frequency of evaluation
-    save_freq: 1e3         # Frequency of model saving
+    eval_freq: 10e3          # Frequency of evaluation
+    save_freq: 5e3         # Frequency of model saving
   optimizers:
     actor_lr: 1e-4           # Learning rate for actor networks
     critic_lr: 3e-4          # Learning rate for critic networks
   temperature:
     initial_temperature: 1.0 # Initial temperature parameter for Gumbel Softmax
     min_temperature: 0.1     # Minimum temperature parameter for Gumbel Softmax
-    temp_decay: 0.99995         # Temperature decay factor
   noise:
     policy_noise: 0.2           # Standard deviation of noise
     noise_clip: 0.2             # Clipping value for noise 
