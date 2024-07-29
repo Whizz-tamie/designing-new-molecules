@@ -151,10 +151,29 @@ class ReactionManager:
             int(self._match_template(reactant, t["smarts"])["first"])
             for t in self.templates.values()
         ]
-        if not any(mask):  # Check if no templates are valid
-            logger.warning(
-                "No valid templates found for the given reactant: %s", reactant
-            )
+        mask = []
+
+        mask_tensor = torch.tensor(mask, dtype=torch.float32)
+
+        return mask_tensor
+
+    def _compute_mask(self, reactant):
+        """Generate a tensor mask indicating which templates are valid for the given reactant."""
+        if reactant is None:
+            return torch.zeros(len(self.templates))
+
+        mask = []
+        for t in self.templates.values():
+            match_result = self._match_template(reactant, t["smarts"])["first"]
+            if match_result:
+                product = self.apply_reaction(reactant, t["smarts"])
+                if product:
+                    mask.append(1)
+                else:
+                    mask.append(0)
+            else:
+                mask.append(0)
+
         mask_tensor = torch.tensor(mask, dtype=torch.float32)
 
         return mask_tensor
@@ -162,7 +181,7 @@ class ReactionManager:
     def _match_template(self, reactant, template):
         """Check if a reactant matches the reaction template."""
         try:
-            reaction = AllChem.ReactionFromSmarts(template)  # type: ignore
+            reaction = AllChem.ReactionFromSmarts(template)
             reactant_mol = Chem.MolFromSmiles(reactant)
 
             if reactant_mol is None:

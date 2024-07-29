@@ -8,7 +8,7 @@ import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
 from gymnasium import spaces
-from rdkit import Chem
+from rdkit import Chem, DataStructs
 from rdkit.Chem import QED, AllChem
 from rdkit.DataStructs.cDataStructs import ExplicitBitVect
 
@@ -31,7 +31,14 @@ class MoleculeDesignEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "console"]}
 
-    def __init__(self, reactant_file, template_file, max_steps=5, render_mode=None):
+    def __init__(
+        self,
+        reactant_file,
+        template_file,
+        max_steps=5,
+        render_mode=None,
+        use_multidiscrete=True,
+    ):
         super(MoleculeDesignEnv, self).__init__()
 
         self.max_steps = max_steps
@@ -41,12 +48,26 @@ class MoleculeDesignEnv(gym.Env):
         self.steps_log = {}
 
         self.reactants, self.templates = self._load_data(reactant_file, template_file)
-        self.reaction_manager = ReactionManager(self.templates, self.reactants)
-        self.action_space = spaces.Discrete(len(self.templates))
-        self.reactant_action_space = None
+        self.num_templates = len(self.templates)
+        self.num_reactants = len(self.reactants)
+
+        self.use_multidiscrete = use_multidiscrete
+        if self.use_multidiscrete:
+            self.action_space = spaces.MultiDiscrete(
+                [self.num_templates, self.num_reactants]
+            )
+        else:
+            self.templates = {
+                k: v for k, v in self.templates.items() if v["type"] == "unimolecular"
+            }
+            self.templates = {i: v for i, (k, v) in enumerate(self.templates.items())}
+            self.action_space = spaces.Discrete(len(self.templates))
+
         self.observation_space = spaces.Box(
             low=0, high=1, shape=(1024,), dtype=np.float32
         )
+
+        self.reaction_manager = ReactionManager(self.templates, self.reactants)
 
         # Variables for reward function
         self.previous_qed = 0.0
@@ -82,7 +103,7 @@ class MoleculeDesignEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         logger.debug("Resetting the environment...")
-        super().reset()
+        super().reset(seed=seed)
         valid_molecule = False
         retry_count = 0
         while not valid_molecule and retry_count < 10:
@@ -115,12 +136,17 @@ class MoleculeDesignEnv(gym.Env):
         mol = self._validate_smiles(smiles)
         if mol is None:
             return np.zeros(1024, dtype=np.float32)
+
         fpgen = AllChem.GetMorganGenerator(radius=2, fpSize=1024)
         fingerprint = fpgen.GetFingerprint(mol)
 
-        logger.debug("Getting the observation for reatant: %s", smiles)
+        # Convert ExplicitBitVect to numpy array
+        arr = np.zeros((1024,), dtype=np.int32)
+        DataStructs.ConvertToNumpyArray(fingerprint, arr)
 
-        return np.array(fingerprint, dtype=np.float32)
+        logger.debug("Getting the observation for reactant: %s", smiles)
+
+        return arr.astype(np.float32)
 
     def _get_info(self):
         """Provides auxiliary information about the current state."""
@@ -148,18 +174,39 @@ class MoleculeDesignEnv(gym.Env):
         logger.info("Step %s ...", self.current_step)
 
         try:
-            template_index, reactant = action
+            if self.use_multidiscrete:
+                template_index = int(action[0])
+                reactant_index = int(action[1])
+            else:
+                template_index = int(action)
+                reactant_index = None
+
             logger.debug(
-                "Action received from KNN - template_index: %s, Reactant: %s",
+                "Template selected: %s, Reactant selected: %s",
                 template_index,
-                reactant,
+                reactant_index,
             )
+
             template = self.templates.get(template_index)
             if not template:
                 raise ValueError("Template index %s out of range." % template_index)
 
+            reactant_smiles = None
+            if template["type"] == "bimolecular" and reactant_index is not None:
+                valid_reactants = self.reaction_manager.get_valid_reactants(
+                    template_index
+                )
+                if reactant_index < len(valid_reactants):
+                    reactant_smiles = valid_reactants[reactant_index]
+                else:
+                    logger.warning(
+                        "Reactant index %s out of range for selected template, using None",
+                        reactant_index,
+                    )
+                    reactant_smiles = None
+
             new_state = self.reaction_manager.apply_reaction(
-                self.current_state, template["smarts"], reactant
+                self.current_state, template["smarts"], reactant_smiles
             )
 
             if new_state is None:
@@ -171,7 +218,7 @@ class MoleculeDesignEnv(gym.Env):
                 self.steps_log[self.current_step] = {
                     "r1": self.current_state,
                     "template": template["name"],
-                    "r2": reactant,
+                    "r2": reactant_smiles,
                     "product": new_state,
                 }
                 logger.debug(
@@ -210,7 +257,7 @@ class MoleculeDesignEnv(gym.Env):
         else:
             reward = 0
 
-        return reward
+        return round(reward, 3)
 
     def _render_human(self, save_path=None):
         if len(self.steps_log) < 1:
@@ -225,10 +272,10 @@ class MoleculeDesignEnv(gym.Env):
         )
         render_steps(self.steps_log, save_path)
 
-    def render(self, mode="human", save_path=None):
-        if mode == "human":
+    def render(self, save_path=None):
+        if self.render_mode == "human":
             self._render_human(save_path)
-        elif mode == "console":
+        elif self.render_mode == "console":
             self._render_console()
 
     def _render_console(self):
