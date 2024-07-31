@@ -55,17 +55,21 @@ class MoleculeDesignEnv(gym.Env):
         self.use_multidiscrete = use_multidiscrete
         if self.use_multidiscrete:
             self.action_space = spaces.MultiDiscrete(
-                [self.num_templates, self.num_reactants]
+                [self.num_templates + 1, self.num_reactants]
             )
         else:
             self.templates = {
                 k: v for k, v in self.templates.items() if v["type"] == "unimolecular"
             }
             self.templates = {i: v for i, (k, v) in enumerate(self.templates.items())}
-            self.action_space = spaces.Discrete(len(self.templates))
+            self.num_templates = len(self.templates)
+            self.action_space = spaces.Discrete(self.num_templates + 1)
+
+        # Original observation space dimension for fingerprint vector
+        original_obs_dim = 1024
 
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(1024,), dtype=np.float32
+            low=0, high=1, shape=(original_obs_dim,), dtype=np.float32
         )
 
         self.reaction_manager = ReactionManager(self.templates, self.reactants)
@@ -133,12 +137,9 @@ class MoleculeDesignEnv(gym.Env):
     def _get_obs(self, smiles=None):
         smiles = smiles if smiles is not None else self.current_state
 
-        if smiles is None:
-            return np.zeros(1024, dtype=np.float32)
-
         mol = self._validate_smiles(smiles)
         if mol is None:
-            return np.zeros(1024, dtype=np.float32)
+            return np.zeros(self.observation_space.shape[0], dtype=np.float32)
 
         fpgen = AllChem.GetMorganGenerator(radius=2, fpSize=1024)
         fingerprint = fpgen.GetFingerprint(mol)
@@ -151,6 +152,13 @@ class MoleculeDesignEnv(gym.Env):
 
         return arr.astype(np.float32)
 
+    def action_masks(self):
+        """
+        Return the action mask to be used by MaskablePPO.
+        """
+        smiles = self.current_state
+        return self.reaction_manager.get_mask(smiles)
+
     def _get_info(self):
         """Provides auxiliary information about the current state."""
         logger.debug(
@@ -162,7 +170,7 @@ class MoleculeDesignEnv(gym.Env):
         try:
             mol = self._validate_smiles(self.current_state)
             qed = QED.qed(mol) if mol else 0.0
-            return {"SMILES": self.current_state, "QED": qed}
+            return {"SMILES": self.current_state, "QED": round(qed, 3)}
         except Exception as e:
             logger.error(
                 "Failed to calculate QED for SMILES: %s, Error: %s",
@@ -189,6 +197,10 @@ class MoleculeDesignEnv(gym.Env):
                 template_index,
                 reactant_index,
             )
+
+            if template_index == self.num_templates:  # Stop action
+                logger.info("Stop action taken.")
+                return self._get_obs(), 0.0, False, True, self._get_info()
 
             template = self.templates.get(template_index)
             if not template:
@@ -258,7 +270,7 @@ class MoleculeDesignEnv(gym.Env):
         except Exception as e:
             logger.error("Error during step execution: %s", str(e))
             self.done = True
-            return None, 0, False, True, {"error": str(e)}
+            return self._get_obs, 0.0, False, True, {"error": str(e)}
 
     def _get_reward(self):
         mol = self._validate_smiles(self.current_state)
@@ -267,7 +279,8 @@ class MoleculeDesignEnv(gym.Env):
             delta_qed = current_qed - self.previous_qed
             reward = delta_qed
         else:
-            reward = 0
+            # Penalize for invalid molecule
+            reward = -1.0
 
         return round(reward, 3)
 

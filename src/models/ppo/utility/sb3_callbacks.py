@@ -1,78 +1,123 @@
 # sb3_callbacks.py
-
+import logging
 import os
 
 import matplotlib.pyplot as plt
 import numpy as np
-from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
+from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
+from sb3_contrib.common.maskable.evaluation import evaluate_policy
+from stable_baselines3.common.callbacks import BaseCallback
 
 import wandb
 
+logger = logging.getLogger(__name__)
+
+
+def prune_checkpoints(directory, max_checkpoints=5):
+    """Prune the checkpoint directory to keep only the last 'max_checkpoints' files"""
+    checkpoints = [
+        os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".zip")
+    ]
+    checkpoints.sort(key=os.path.getmtime, reverse=True)
+
+    # Keep only the 'max_checkpoints' most recent files
+    for old_checkpoint in checkpoints[max_checkpoints:]:
+        os.remove(old_checkpoint)
+
+
+class PruningCallback(BaseCallback):
+    def __init__(self, check_freq, save_path, max_checkpoints=5, verbose=1):
+        super(PruningCallback, self).__init__(verbose)
+        self.check_freq = check_freq
+        self.save_path = save_path
+        self.max_checkpoints = max_checkpoints
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.check_freq == 0:
+            prune_checkpoints(self.save_path, max_checkpoints=self.max_checkpoints)
+            if self.verbose > 0:
+                logger.info(f"Old checkpoints pruned at {self.num_timesteps} steps.")
+        return True
+
 
 class CustomWandbCallback(BaseCallback):
-    def __init__(self, verbose=0):
+    def __init__(self, gamma: float, verbose=0):
         super().__init__(verbose)
+        self.gamma = gamma
         self.episode_rewards = []
         self.episode_qeds = []
-        self.episode_steps = 0
+        self.episode_actions = []
         self.total_rewards = []
         self.total_qeds = []
+        self.total_actions = []
         self.total_steps = 0
         self.episode_count = 0
+        self.episode_steps = 0
 
     def _on_step(self) -> bool:
         reward = self.locals["rewards"][0]
+        action = self.locals["actions"][0]
         self.episode_rewards.append(reward)
+        self.episode_actions.append(action)
 
-        if len(self.locals["infos"]) > 0 and "QED" in self.locals["infos"][0]:
-            qed = self.locals["infos"][0].get("QED", 0)
-            self.episode_qeds.append(qed)
+        qed = self.locals["infos"][0].get("QED", 0)
+        self.episode_qeds.append(qed)
 
         self.episode_steps += 1
         self.total_steps += 1
 
         # Check if the episode is done
-        if self.locals["dones"][0]:
+        if "episode" in self.locals["infos"][0].keys():
             self.episode_count += 1
+            self._log_episode_metrics()
+            self._reset_episode_metrics()
 
-            total_reward = sum(self.episode_rewards)
-            avg_reward = np.mean(self.episode_rewards) if self.episode_rewards else 0
-            max_reward = max(self.episode_rewards) if self.episode_rewards else 0
-
-            total_qed = sum(self.episode_qeds)
-            avg_qed = np.mean(self.episode_qeds) if self.episode_qeds else 0
-
-            # Log episode-wise metrics
-            wandb.log(
-                {
-                    "episode": self.episode_count,
-                    "total_reward": total_reward,
-                    "avg_reward": avg_reward,
-                    "max_reward": max_reward,
-                    "total_qed": total_qed,
-                    "avg_qed": avg_qed,
-                    "episode_steps": self.episode_steps,
-                    "total_steps": self.total_steps,
-                }
-            )
-
-            self.total_rewards.append(total_reward)
-            self.total_qeds.append(total_qed)
-
-            self.episode_rewards = []
-            self.episode_qeds = []
-            self.episode_steps = 0
-
-        # Log step-wise reward and QED
         wandb.log(
             {
                 "step_reward": reward,
-                "step_qed": qed if "QED" in self.locals["infos"][0] else None,
+                "step_qed": qed,
+                "step_action": action,
                 "total_steps": self.total_steps,
             }
         )
 
         return True
+
+    def _log_episode_metrics(self):
+        total_reward = sum(self.episode_rewards)
+        avg_reward = np.mean(self.episode_rewards)
+        max_reward = max(self.episode_rewards, default=0)
+        total_qed = sum(self.episode_qeds)
+        avg_qed = np.mean(self.episode_qeds)
+        max_qed = max(self.episode_qeds, default=0)
+        discounted_return = sum(
+            self.gamma**i * r for i, r in enumerate(self.episode_rewards)
+        )
+
+        wandb.log(
+            {
+                "episode": self.episode_count,
+                "total_reward": total_reward,
+                "avg_reward": avg_reward,
+                "max_reward": max_reward,
+                "total_qed": total_qed,
+                "avg_qed": avg_qed,
+                "max_qed": max_qed,
+                "episode_steps": self.episode_steps,
+                "total_steps": self.total_steps,
+                "discounted_return": discounted_return,
+            }
+        )
+
+        self.total_rewards.append(total_reward)
+        self.total_qeds.append(total_qed)
+        self.total_actions.extend(self.episode_actions)
+
+    def _reset_episode_metrics(self):
+        self.episode_rewards = []
+        self.episode_qeds = []
+        self.episode_actions = []
+        self.episode_steps = 0
 
     def _on_training_end(self) -> None:
         overall_avg_reward = np.mean(self.total_rewards) if self.total_rewards else 0
@@ -88,11 +133,12 @@ class CustomWandbCallback(BaseCallback):
         )
 
 
-class CustomEvalCallback(EvalCallback):
+class CustomEvalCallback(MaskableEvalCallback):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.episode_count = 0  # Initialize episode counter
         self.all_episode_QEDs = []
+        self.episode_images = {}  # Store images for each episode
 
     def _on_step(self) -> bool:
         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
@@ -111,14 +157,10 @@ class CustomEvalCallback(EvalCallback):
 
                     fig = env.render()
                     if fig:
-                        wandb.log(
-                            {
-                                f"eval_step_{self.num_timesteps}_episode_{self.episode_count}": wandb.Image(
-                                    fig
-                                ),
-                                "train_steps": self.num_timesteps,
-                            }
-                        )
+                        # Store figure in dictionary with episode count
+                        self.episode_images[
+                            f"eval_timestep_{self.num_timesteps}_episode_{self.episode_count}"
+                        ] = fig
                         plt.close(fig)  # Close the figure to free memory
 
             # Evaluate policy with the custom callback
@@ -128,18 +170,23 @@ class CustomEvalCallback(EvalCallback):
 
             # Log results and QED statistics at the end of evaluation
             self._log_results(episode_rewards, episode_lengths)
+
+            # Log all episode images and QED statistics at the end of evaluation
+            if self.episode_images:
+                wandb.log(self.episode_images)
+                self.episode_images.clear()
+
+            # Log statistics at the end of evaluation
             if self.all_episode_QEDs:
-                avg_episode_QED = np.mean(self.all_episode_QEDs)
-                total_episode_QED = np.sum(self.all_episode_QEDs)
-                max_episode_QED = np.max(self.all_episode_QEDs)
                 wandb.log(
                     {
-                        "eval_avg_episode_QED": avg_episode_QED,
-                        "eval_total_episode_QED": total_episode_QED,
-                        "eval_max_episode_QED": max_episode_QED,
-                        "timestep": self.num_timesteps,
+                        "train_steps": self.num_timesteps,
+                        "eval_avg_episode_QED": np.mean(self.all_episode_QEDs),
+                        "eval_total_episode_QED": np.sum(self.all_episode_QEDs),
+                        "eval_max_episode_QED": np.max(self.all_episode_QEDs),
                     }
                 )
+
             # Reset QEDs for next evaluation
             self.all_episode_QEDs = []
             self.episode_count = 0
@@ -150,8 +197,6 @@ class CustomEvalCallback(EvalCallback):
         """
         Custom evaluate function to include a callback that handles rendering.
         """
-        from stable_baselines3.common.evaluation import evaluate_policy
-
         return evaluate_policy(
             self.model,
             self.eval_env,

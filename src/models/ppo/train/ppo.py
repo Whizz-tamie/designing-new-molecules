@@ -1,22 +1,42 @@
 import argparse
+import logging
 import os
-import sys
 
 import gymnasium as gym
-import numpy as np
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CallbackList
+from sb3_contrib import MaskablePPO
+from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from wandb.integration.sb3 import WandbCallback
 
 import src.models.ppo.config.config as config
 import wandb
-from src.models.ppo.utility.sb3_callbacks import CustomEvalCallback, CustomWandbCallback
+from src.models.pgfs.logging_config import setup_logging
+from src.models.ppo.utility.sb3_callbacks import (
+    CustomEvalCallback,
+    CustomWandbCallback,
+    PruningCallback,
+)
+
+
+def find_latest_checkpoint(checkpoint_dir):
+    """Find the latest checkpoint in the given directory."""
+    if not os.path.exists(checkpoint_dir):
+        return None
+
+    checkpoint_files = [
+        os.path.join(checkpoint_dir, f)
+        for f in os.listdir(checkpoint_dir)
+        if f.endswith(".zip")
+    ]
+    if not checkpoint_files:
+        return None
+    latest_checkpoint = max(checkpoint_files, key=os.path.getctime)
+    return latest_checkpoint
 
 
 def main(experiment_name, run_id):
-    wandb.require("core")
+    logger = logging.getLogger(__name__)
 
     wandb.init(
         project=config.WANDB_PROJECT,
@@ -24,7 +44,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 PPO on the MoleculeDesign-v1 environment",
+        notes="Running SB3 PPO on the MoleculeDesign-v1 environment with masked actions",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",
@@ -39,10 +59,7 @@ def main(experiment_name, run_id):
     run_id = wandb.run.id
     paths = config.initialize_paths(run_id)
 
-    os.makedirs(os.path.dirname(paths["log_file"]), exist_ok=True)
-
-    sys.stdout = open(paths["log_file"], "w")
-    sys.stderr = open(paths["log_file"], "w")
+    logger.info(f"Experiment '{experiment_name}' with run ID '{run_id}' started.")
 
     env = gym.make(
         config.ENV_NAME,
@@ -72,17 +89,39 @@ def main(experiment_name, run_id):
     )
     eval_env = DummyVecEnv([lambda: eval_env])
 
-    model = PPO(
-        policy=config.POLICY_TYPE,
-        env=env,
-        verbose=1,
-        tensorboard_log=paths["tensorboard_log_dir"],
+    # Check for a previous checkpoint to resume training
+    latest_checkpoint = find_latest_checkpoint(paths["model_save_path"])
+    if latest_checkpoint:
+        model = MaskablePPO.load(latest_checkpoint, env=env)
+        logger.info(f"Resuming training from checkpoint: {latest_checkpoint}")
+    else:
+        model = MaskablePPO(
+            policy=config.POLICY_TYPE,
+            env=env,
+            verbose=1,
+            tensorboard_log=paths["tensorboard_log_dir"],
+            target_kl=0.02,
+        )
+        logger.info(f"No checkpoint found, starting training from scratch...")
+
+    # Setup callback for periodic checkpoint saving
+    checkpoint_callback = CheckpointCallback(
+        save_freq=config.MODEL_SAVE_FREQ,
+        save_path=paths["model_save_path"],
+        name_prefix="ppo_model",
+    )
+
+    pruning_callback = PruningCallback(
+        check_freq=config.CHECK_FREQ,
+        save_path=paths["model_save_path"],
+        max_checkpoints=5,
     )
 
     wandb_callback = WandbCallback(
-        gradient_save_freq=config.GRADIENT_SAVE_FREQ,
-        model_save_freq=config.MODEL_SAVE_FREQ,
         model_save_path=paths["model_save_path"],
+        model_save_freq=config.MODEL_SAVE_FREQ,
+        gradient_save_freq=config.GRADIENT_SAVE_FREQ,
+        log="all",
         verbose=2,
     )
 
@@ -91,18 +130,28 @@ def main(experiment_name, run_id):
         best_model_save_path=paths["eval_model_save_path"],
         log_path=paths["eval_log_path"],
         eval_freq=config.EVAL_FREQ,
+        n_eval_episodes=config.N_EVAL_EPISODES,
         deterministic=config.DETERMINISTIC,
         render=config.RENDER,
     )
 
-    custom_wandb_callback = CustomWandbCallback()
+    custom_wandb_callback = CustomWandbCallback(gamma=model.gamma)
 
-    callback = CallbackList([wandb_callback, custom_wandb_callback, eval_callback])
+    callback = CallbackList(
+        [
+            wandb_callback,
+            custom_wandb_callback,
+            eval_callback,
+            checkpoint_callback,
+            pruning_callback,
+        ]
+    )
 
     model.learn(
         total_timesteps=wandb.config.total_timesteps,
         callback=callback,
-        tb_log_name="Mol_PPO",  # Subdirectory for TensorBoard logs
+        tb_log_name="Mol_PPO",  # Subdirectory for TensorBoard logs]
+        progress_bar=True,
     )
 
     model.save(paths["final_model_save_path"])
@@ -110,6 +159,7 @@ def main(experiment_name, run_id):
     wandb.finish()
 
     env.close()
+    logger.info(f"Experiment '{experiment_name}' with run ID '{run_id}' finished.")
 
 
 if __name__ == "__main__":
@@ -120,4 +170,9 @@ if __name__ == "__main__":
     parser.add_argument("--run_id", type=str, help="ID of the run")
 
     args = parser.parse_args()
+    log_dir = f"src/models/ppo/logs/{args.run_id}/"
+    os.makedirs(log_dir, exist_ok=True)
+
+    setup_logging(args.experiment_name, log_dir=log_dir)
+    logger = logging.getLogger(__name__)
     main(experiment_name=args.experiment_name, run_id=args.run_id)

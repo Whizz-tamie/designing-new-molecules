@@ -2,6 +2,7 @@
 
 import logging
 
+import numpy as np
 import torch
 from rdkit import Chem
 from rdkit.Chem import QED, AllChem
@@ -136,8 +137,8 @@ class ReactionManager:
             self.template_mask_cache[reactant] = self._compute_mask(reactant)
         valid_templates = self.template_mask_cache[reactant]
         logger.info(
-            "Found %s compatible templates for reactant: %s",
-            int(valid_templates.sum().item()),
+            "Mask: %s compatible templates for reactant: %s",
+            int(valid_templates.sum()),
             reactant,
         )
         return valid_templates
@@ -145,22 +146,9 @@ class ReactionManager:
     def _compute_mask(self, reactant):
         """Generate a tensor mask indicating which templates are valid for the given reactant."""
         if reactant is None:
-            return torch.zeros(len(self.templates))
-
-        mask = [
-            int(self._match_template(reactant, t["smarts"])["first"])
-            for t in self.templates.values()
-        ]
-        mask = []
-
-        mask_tensor = torch.tensor(mask, dtype=torch.float32)
-
-        return mask_tensor
-
-    def _compute_mask(self, reactant):
-        """Generate a tensor mask indicating which templates are valid for the given reactant."""
-        if reactant is None:
-            return torch.zeros(len(self.templates))
+            mask = np.zeros(len(self.templates) + 1)  # +1 for the stop action
+            mask[-1] = 1  # Ensure the stop action is always valid
+            return mask
 
         mask = []
         for t in self.templates.values():
@@ -174,9 +162,11 @@ class ReactionManager:
             else:
                 mask.append(0)
 
-        mask_tensor = torch.tensor(mask, dtype=torch.float32)
+        # Add the stop action as always valid
+        mask.append(1)
 
-        return mask_tensor
+        mask_array = np.array(mask, dtype=np.float32)
+        return mask_array
 
     def _match_template(self, reactant, template):
         """Check if a reactant matches the reaction template."""
