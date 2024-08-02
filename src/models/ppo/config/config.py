@@ -2,7 +2,7 @@
 import os
 
 # WandB configuration
-WANDB_PROJECT = "MOLECULE-DESIGN-RL_PPO"
+WANDB_PROJECT = "Designing new molecules with RL"
 WANDB_ENTITY = "whizz"
 
 # Environment configuration
@@ -18,13 +18,13 @@ BASE_DIR = "src/models/ppo/"
 LOG_DIR = BASE_DIR + "logs/"
 
 # PPO configuration
-TOTAL_TIMESTEPS = 5000000
+TOTAL_TIMESTEPS = 500000
 POLICY_TYPE = "MlpPolicy"
 
 # Callback configuration
 GRADIENT_SAVE_FREQ = 100
 MODEL_SAVE_FREQ = 5000
-EVAL_FREQ = 100000
+EVAL_FREQ = 50000
 DETERMINISTIC = True
 RENDER = False
 N_EVAL_EPISODES = 7

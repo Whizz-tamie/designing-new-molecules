@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J PPO_QED_run1
+#SBATCH -J Baseline_PPO_run0
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-GTJ21-SL2-GPU
 #! How many whole nodes should be allocated?
@@ -24,7 +24,7 @@
 #! How many CPUs per task?
 #SBATCH --cpus-per-task=1
 #! How much wallclock time will be required?
-#SBATCH --time=30:00:00
+#SBATCH --time=15:00:00
 #! What types of email messages do you wish to receive?
 #SBATCH --mail-type=NONE
 #! Uncomment this to prevent the job from being requeued (e.g. if
@@ -63,10 +63,10 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/ppo/train/ppo.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=PPO_QED_v1
+EXPERIMENT_NAME=Baseline_PPO_QED_v0
 
 #! Define wandb run id:
-RUN_ID=ppo_run.1
+RUN_ID=sb3_ppo_run.0
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\" --run_id \"$RUN_ID\""

@@ -3,7 +3,7 @@ import logging
 import os
 
 import gymnasium as gym
-from sb3_contrib import MaskablePPO
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -44,7 +44,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 PPO on the MoleculeDesign-v1 environment with masked actions",
+        notes="Running SB3 PPO on the MoleculeDesign-v1 environment",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",
@@ -92,15 +92,14 @@ def main(experiment_name, run_id):
     # Check for a previous checkpoint to resume training
     latest_checkpoint = find_latest_checkpoint(paths["model_save_path"])
     if latest_checkpoint:
-        model = MaskablePPO.load(latest_checkpoint, env=env)
+        model = PPO.load(latest_checkpoint, env=env)
         logger.info(f"Resuming training from checkpoint: {latest_checkpoint}")
     else:
-        model = MaskablePPO(
+        model = PPO(
             policy=config.POLICY_TYPE,
             env=env,
             verbose=1,
             tensorboard_log=paths["tensorboard_log_dir"],
-            target_kl=0.02,
         )
         logger.info(f"No checkpoint found, starting training from scratch...")
 

@@ -63,7 +63,7 @@ class MoleculeDesignEnv(gym.Env):
             }
             self.templates = {i: v for i, (k, v) in enumerate(self.templates.items())}
             self.num_templates = len(self.templates)
-            self.action_space = spaces.Discrete(self.num_templates + 1)
+            self.action_space = spaces.Discrete(self.num_templates)
 
         # Original observation space dimension for fingerprint vector
         original_obs_dim = 1024
@@ -187,7 +187,11 @@ class MoleculeDesignEnv(gym.Env):
         try:
             if self.use_multidiscrete:
                 template_index = int(action[0])
-                reactant_index = int(action[1])
+                reactant_index = (
+                    int(action[1])
+                    if self.templates[template_index]["type"] == "bimolecular"
+                    else None
+                )
             else:
                 template_index = int(action)
                 reactant_index = None
@@ -198,9 +202,9 @@ class MoleculeDesignEnv(gym.Env):
                 reactant_index,
             )
 
-            if template_index == self.num_templates:  # Stop action
-                logger.info("Stop action taken.")
-                return self._get_obs(), 0.0, False, True, self._get_info()
+            # if template_index == self.num_templates:  # Stop action
+            # logger.info("Stop action taken.")
+            # return self._get_obs(), 0.0, False, True, self._get_info()
 
             template = self.templates.get(template_index)
             if not template:
@@ -279,8 +283,7 @@ class MoleculeDesignEnv(gym.Env):
             delta_qed = current_qed - self.previous_qed
             reward = delta_qed
         else:
-            # Penalize for invalid molecule
-            reward = -1.0
+            reward = 0
 
         return round(reward, 3)
 

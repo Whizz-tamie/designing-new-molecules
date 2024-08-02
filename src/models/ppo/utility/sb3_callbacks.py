@@ -4,9 +4,8 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
-from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
-from sb3_contrib.common.maskable.evaluation import evaluate_policy
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
+from stable_baselines3.common.evaluation import evaluate_policy
 
 import wandb
 
@@ -133,7 +132,7 @@ class CustomWandbCallback(BaseCallback):
         )
 
 
-class CustomEvalCallback(MaskableEvalCallback):
+class CustomEvalCallback(EvalCallback):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.episode_count = 0  # Initialize episode counter
@@ -159,7 +158,7 @@ class CustomEvalCallback(MaskableEvalCallback):
                     if fig:
                         # Store figure in dictionary with episode count
                         self.episode_images[
-                            f"eval_timestep_{self.num_timesteps}_episode_{self.episode_count}"
+                            f"eval_trainstep_{self.num_timesteps}_episode_{self.episode_count}"
                         ] = fig
                         plt.close(fig)  # Close the figure to free memory
 
