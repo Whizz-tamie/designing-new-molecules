@@ -146,8 +146,8 @@ class ReactionManager:
     def _compute_mask(self, reactant):
         """Generate a tensor mask indicating which templates are valid for the given reactant."""
         if reactant is None:
-            mask = np.zeros(len(self.templates))  # +1 for the stop action
-            # mask[-1] = 1  # Ensure the stop action is always valid
+            mask = np.zeros(len(self.templates) + 1)  # +1 for the stop action
+            mask[-1] = 1  # Ensure the stop action is always valid
             return mask
 
         mask = []
@@ -163,7 +163,7 @@ class ReactionManager:
                 mask.append(0)
 
         # Add the stop action as always valid
-        # mask.append(1)
+        mask.append(1)
 
         mask_array = np.array(mask, dtype=np.float32)
         return mask_array

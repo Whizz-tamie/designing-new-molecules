@@ -12,7 +12,7 @@ from wandb.integration.sb3 import WandbCallback
 import src.models.ppo.config.config as config
 import wandb
 from src.models.pgfs.logging_config import setup_logging
-from src.models.ppo.utility.sb3_callbacks import (
+from src.models.ppo.utility.maskable_sb3_callbacks import (
     CustomEvalCallback,
     CustomWandbCallback,
     PruningCallback,
@@ -44,7 +44,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 PPO on the MoleculeDesign-v1 environment with masked actions",
+        notes="Running SB3 PPO on the MoleculeDesign-v1 environment with masked actions and a stop action",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",
@@ -100,7 +100,6 @@ def main(experiment_name, run_id):
             env=env,
             verbose=1,
             tensorboard_log=paths["tensorboard_log_dir"],
-            target_kl=0.02,
         )
         logger.info(f"No checkpoint found, starting training from scratch...")
 
@@ -151,6 +150,7 @@ def main(experiment_name, run_id):
         total_timesteps=wandb.config.total_timesteps,
         callback=callback,
         tb_log_name="Mol_PPO",  # Subdirectory for TensorBoard logs]
+        use_masking=True,
         progress_bar=True,
     )
 

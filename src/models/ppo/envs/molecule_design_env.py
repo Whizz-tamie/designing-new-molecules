@@ -63,14 +63,13 @@ class MoleculeDesignEnv(gym.Env):
             }
             self.templates = {i: v for i, (k, v) in enumerate(self.templates.items())}
             self.num_templates = len(self.templates)
-            self.action_space = spaces.Discrete(self.num_templates)
+            self.action_space = spaces.Discrete(self.num_templates + 1)
 
         # Original observation space dimension for fingerprint vector
         original_obs_dim = 1024
-        action_mask_dim = self.num_templates
 
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(original_obs_dim + action_mask_dim,), dtype=np.float32
+            low=0, high=1, shape=(original_obs_dim,), dtype=np.float32
         )
 
         self.reaction_manager = ReactionManager(self.templates, self.reactants)
@@ -149,11 +148,9 @@ class MoleculeDesignEnv(gym.Env):
         arr = np.zeros((1024,), dtype=np.int32)
         DataStructs.ConvertToNumpyArray(fingerprint, arr)
 
-        action_mask = self.action_masks()
-
         logger.debug("Getting the observation for reactant: %s", smiles)
 
-        return np.concatenate((arr.astype(np.float32), action_mask), axis=0)
+        return arr.astype(np.float32)
 
     def action_masks(self):
         """
@@ -205,9 +202,9 @@ class MoleculeDesignEnv(gym.Env):
                 reactant_index,
             )
 
-            # if template_index == self.num_templates:  # Stop action
-            # logger.info("Stop action taken.")
-            # return self._get_obs(), 0.0, False, True, self._get_info()
+            if template_index == self.num_templates:  # Stop action
+                logger.info("Stop action taken.")
+                return self._get_obs(), 0.0, False, True, self._get_info()
 
             template = self.templates.get(template_index)
             if not template:
@@ -215,11 +212,8 @@ class MoleculeDesignEnv(gym.Env):
 
             reactant_smiles = None
             if template["type"] == "bimolecular" and reactant_index is not None:
-                valid_reactants = self.reaction_manager.get_valid_reactants(
-                    template_index
-                )
-                if reactant_index < len(valid_reactants):
-                    reactant_smiles = valid_reactants[reactant_index]
+                if reactant_index < len(self.reactants.keys()):
+                    reactant_smiles = list(self.reactants)[reactant_index]
                 else:
                     logger.warning(
                         "Reactant index %s out of range for selected template, using None",
@@ -286,7 +280,7 @@ class MoleculeDesignEnv(gym.Env):
             delta_qed = current_qed - self.previous_qed
             reward = delta_qed
         else:
-            reward = 0
+            reward = -1
 
         return round(reward, 3)
 

@@ -1,195 +1,265 @@
-# reaction_manager.py
-
+# sb3_callbacks.py
 import logging
+import os
 
+import matplotlib.pyplot as plt
 import numpy as np
-import torch
-from rdkit import Chem
-from rdkit.Chem import QED, AllChem
+from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
+from sb3_contrib.common.maskable.evaluation import evaluate_policy
+from stable_baselines3.common.callbacks import BaseCallback
 
-# Configure the logger
+import wandb
+
 logger = logging.getLogger(__name__)
 
 
-class ReactionManager:
-    def __init__(self, templates, reactants):
-        self.templates = templates
-        self.reactants = reactants
-        self.template_mask_cache = {}
-        self.valid_reactants_cache = {}
-        self._initialize_template_types()
+def prune_checkpoints(directory, max_checkpoints=5):
+    """Prune the checkpoint directory to keep only the last 'max_checkpoints' files"""
+    checkpoints = [
+        os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".zip")
+    ]
+    checkpoints.sort(key=os.path.getmtime, reverse=True)
 
-        logger.info("ReactionManager Initialised...")
+    # Keep only the 'max_checkpoints' most recent files
+    for old_checkpoint in checkpoints[max_checkpoints:]:
+        os.remove(old_checkpoint)
 
-    def _initialize_template_types(self):
-        self.template_types = {
-            i: t["type"] for i, t in enumerate(self.templates.values())
-        }
-        # Define a mapping from string labels to integers
-        type_mapping = {"unimolecular": 0, "bimolecular": 1}
-        # Convert the original dictionary to use integer labels
-        self.template_types = {
-            k: type_mapping[v] for k, v in self.template_types.items()
-        }
-        # Convert dictionary to tensor
-        self.template_types = torch.tensor(
-            [self.template_types[i] for i in range(max(self.template_types.keys()) + 1)]
+
+class PruningCallback(BaseCallback):
+    def __init__(self, check_freq, save_path, max_checkpoints=5, verbose=1):
+        super(PruningCallback, self).__init__(verbose)
+        self.check_freq = check_freq
+        self.save_path = save_path
+        self.max_checkpoints = max_checkpoints
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.check_freq == 0:
+            prune_checkpoints(self.save_path, max_checkpoints=self.max_checkpoints)
+            if self.verbose > 0:
+                logger.info(f"Old checkpoints pruned at {self.num_timesteps} steps.")
+        return True
+
+
+class CustomWandbCallback(BaseCallback):
+    def __init__(self, gamma: float, verbose=0):
+        super().__init__(verbose)
+        self.gamma = gamma
+        self.episode_rewards = []
+        self.episode_qeds = []
+        self.episode_actions = []
+        self.total_rewards = []
+        self.total_qeds = []
+        self.total_actions = []
+        self.total_steps = 0
+        self.episode_count = 0
+        self.episode_steps = 0
+
+    def _on_step(self) -> bool:
+        reward = self.locals["rewards"][0]
+        action = self.locals["actions"][0]
+        self.episode_rewards.append(reward)
+        self.episode_actions.append(action)
+
+        qed = self.locals["infos"][0].get("QED", 0)
+        self.episode_qeds.append(qed)
+
+        self.episode_steps += 1
+        self.total_steps += 1
+
+        # Check if the episode is done
+        if "episode" in self.locals["infos"][0].keys():
+            self.episode_count += 1
+            self._log_episode_metrics()
+            self._reset_episode_metrics()
+
+        wandb.log(
+            {
+                "step_reward": reward,
+                "step_qed": qed,
+                "step_action": action,
+                "total_steps": self.total_steps,
+            }
         )
-        logger.debug("Template types initialized: %s", self.template_types.shape)
 
-    def apply_reaction(self, state, template, reactant=None):
-        try:
-            state_mol = Chem.MolFromSmiles(state)
-            if not state_mol:
-                logger.error("Invalid state molecule SMILES: %s", state)
-                return None
+        return True
 
-            reaction = AllChem.ReactionFromSmarts(template)  # type: ignore
-            return self._process_reaction(state_mol, reaction, reactant)
-        except Exception as e:
-            logger.error("Exception in apply_reaction: %s", e)
-            return None
-
-    def _process_reaction(self, state_mol, reaction, reactant):
-        num_reactants = reaction.GetNumReactantTemplates()
-        product_sets = self._run_reaction(state_mol, reaction, num_reactants, reactant)
-
-        if not product_sets:
-            logger.warning("No products generated from reaction...")
-            return None
-
-        # Filter and sanitize products separately
-        valid_products = []
-        for product in (p for subset in product_sets for p in subset):
-            try:
-                sanitization_result = Chem.SanitizeMol(product, catchErrors=True)
-                if sanitization_result == Chem.SanitizeFlags.SANITIZE_NONE:
-                    valid_products.append(product)
-                else:
-                    error_flags = []
-                    for flag in Chem.SanitizeFlags:
-                        if sanitization_result & flag:
-                            error_flags.append(flag.name)
-                    logger.error(
-                        "Sanitization failed for product with SMILES '%s' due to: %s",
-                        Chem.MolToSmiles(product, True),
-                        ", ".join(error_flags),
-                    )
-            except Exception as e:
-                logger.error(
-                    "Sanitization failed for product: %s. Error: %s",
-                    Chem.MolToSmiles(product, True),
-                    str(e),
-                )
-                continue
-
-        # Select the best product based on QED
-        if valid_products:
-            try:
-                best_product = max(valid_products, key=lambda mol: QED.qed(mol))
-                best_product_smiles = Chem.MolToSmiles(best_product)
-
-                logger.info(
-                    "Generated new product: %s with QED: %s",
-                    best_product_smiles,
-                    QED.qed(best_product),
-                )
-                return best_product_smiles
-            except Exception as e:
-                logger.error("Error in QED calculation: %s", e)
-                return None
-        return None
-
-    def _run_reaction(self, state_mol, reaction, num_reactants, reactant):
-        if num_reactants == 1:
-            return reaction.RunReactants((state_mol,))
-        elif num_reactants == 2 and reactant:
-            reactant_mol = Chem.MolFromSmiles(reactant)
-            if reactant_mol:
-                return reaction.RunReactants((state_mol, reactant_mol))
-            else:
-                logger.error("Invalid second reactant molecule SMILES: %s", reactant)
-        return []
-
-    def get_valid_reactants(self, template_index):
-        if template_index not in self.valid_reactants_cache:
-            self.valid_reactants_cache[template_index] = self._compute_valid_reactants(
-                template_index
-            )
-        compatible_reactants = self.valid_reactants_cache.get(template_index, [])
-        logger.info(
-            "Found %s compatible second reactants for template: %s",
-            len(compatible_reactants),
-            self.templates[template_index]["name"],
+    def _log_episode_metrics(self):
+        total_reward = sum(self.episode_rewards)
+        avg_reward = np.mean(self.episode_rewards)
+        max_reward = max(self.episode_rewards, default=0)
+        total_qed = sum(self.episode_qeds)
+        avg_qed = np.mean(self.episode_qeds)
+        max_qed = max(self.episode_qeds, default=0)
+        discounted_return = sum(
+            self.gamma**i * r for i, r in enumerate(self.episode_rewards)
         )
-        return compatible_reactants
 
-    def _compute_valid_reactants(self, template_index):
-        template = self.templates[template_index]
-        return [
-            reactant
-            for reactant in self.reactants.keys()
-            if self._match_template(reactant, template["smarts"])["second"]
-        ]
-
-    def get_mask(self, reactant):
-        if reactant not in self.template_mask_cache:
-            self.template_mask_cache[reactant] = self._compute_mask(reactant)
-        valid_templates = self.template_mask_cache[reactant]
-        logger.info(
-            "Mask: %s compatible templates for reactant: %s",
-            int(valid_templates.sum()),
-            reactant,
+        wandb.log(
+            {
+                "episode": self.episode_count,
+                "total_reward": total_reward,
+                "avg_reward": avg_reward,
+                "max_reward": max_reward,
+                "total_qed": total_qed,
+                "avg_qed": avg_qed,
+                "max_qed": max_qed,
+                "episode_steps": self.episode_steps,
+                "total_steps": self.total_steps,
+                "discounted_return": discounted_return,
+            }
         )
-        return valid_templates
 
-    def _compute_mask(self, reactant):
-        """Generate a tensor mask indicating which templates are valid for the given reactant."""
-        if reactant is None:
-            mask = np.zeros(len(self.templates) + 1)  # +1 for the stop action
-            mask[-1] = 1  # Ensure the stop action is always valid
-            return mask
+        self.total_rewards.append(total_reward)
+        self.total_qeds.append(total_qed)
+        self.total_actions.extend(self.episode_actions)
 
-        mask = []
-        for t in self.templates.values():
-            match_result = self._match_template(reactant, t["smarts"])["first"]
-            if match_result:
-                product = self.apply_reaction(reactant, t["smarts"])
-                if product:
-                    mask.append(1)
-                else:
-                    mask.append(0)
-            else:
-                mask.append(0)
+    def _reset_episode_metrics(self):
+        self.episode_rewards = []
+        self.episode_qeds = []
+        self.episode_actions = []
+        self.episode_steps = 0
 
-        # Add the stop action as always valid
-        mask.append(1)
+    def _on_training_end(self) -> None:
+        overall_avg_reward = np.mean(self.total_rewards) if self.total_rewards else 0
+        overall_avg_qed = np.mean(self.total_qeds) if self.total_qeds else 0
 
-        mask_array = np.array(mask, dtype=np.float32)
-        return mask_array
+        # Log overall training metrics
+        wandb.log(
+            {
+                "overall_avg_reward": overall_avg_reward,
+                "overall_avg_qed": overall_avg_qed,
+                "total_steps": self.total_steps,
+            }
+        )
 
-    def _match_template(self, reactant, template):
-        """Check if a reactant matches the reaction template."""
-        try:
-            reaction = AllChem.ReactionFromSmarts(template)
-            reactant_mol = Chem.MolFromSmiles(reactant)
 
-            if reactant_mol is None:
-                return {"first": False, "second": False}
+class CustomEvalCallback(MaskableEvalCallback):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.episode_count = 0  # Initialize episode counter
+        self.all_episode_QEDs = []
+        self.episode_images = {}  # Store images for each episode
 
-            matches = {"first": False, "second": False}
-            reactant1_template = reaction.GetReactantTemplate(0)
-            matches["first"] = reactant_mol.HasSubstructMatch(
-                reactant1_template, useChirality=True
+    def _on_step(self) -> bool:
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+            # Custom callback to handle rendering and QED logging
+            def custom_callback(locals_dict, globals_dict):
+                step_info = locals_dict["info"]
+                env = locals_dict["env"].envs[0].unwrapped
+
+                # Extract QED from the step info if available
+                qed = step_info.get("QED", 0)
+                self.all_episode_QEDs.append(qed)
+
+                # Check if the episode is done
+                if "episode" in step_info.keys():
+                    self.episode_count += 1  # track episode count
+
+                    fig = env.render()
+                    if fig:
+                        # Store figure in dictionary with episode count
+                        self.episode_images[
+                            f"eval_timestep_{self.num_timesteps}_episode_{self.episode_count}"
+                        ] = fig
+                        plt.close(fig)  # Close the figure to free memory
+
+            # Evaluate policy with the custom callback
+            episode_rewards, episode_lengths = self._evaluate_policy(
+                callback=custom_callback
             )
 
-            if reaction.GetNumReactantTemplates() == 2:
-                reactant2_template = reaction.GetReactantTemplate(1)
-                matches["second"] = reactant_mol.HasSubstructMatch(
-                    reactant2_template, useChirality=True
+            # Log results and QED statistics at the end of evaluation
+            self._log_results(episode_rewards, episode_lengths)
+
+            # Log all episode images and QED statistics at the end of evaluation
+            if self.episode_images:
+                wandb.log(self.episode_images)
+                self.episode_images.clear()
+
+            # Log statistics at the end of evaluation
+            if self.all_episode_QEDs:
+                wandb.log(
+                    {
+                        "train_steps": self.num_timesteps,
+                        "eval_avg_episode_QED": np.mean(self.all_episode_QEDs),
+                        "eval_total_episode_QED": np.sum(self.all_episode_QEDs),
+                        "eval_max_episode_QED": np.max(self.all_episode_QEDs),
+                    }
                 )
 
-            return matches
-        except Exception as e:
-            logger.error("Error in matching template: %s", e)
-            return {"first": False, "second": False}
+            # Reset QEDs for next evaluation
+            self.all_episode_QEDs = []
+            self.episode_count = 0
+
+        return True
+
+    def _evaluate_policy(self, callback=None):
+        """
+        Custom evaluate function to include a callback that handles rendering.
+        """
+        return evaluate_policy(
+            self.model,
+            self.eval_env,
+            n_eval_episodes=self.n_eval_episodes,
+            render=self.render,
+            deterministic=self.deterministic,
+            callback=callback,
+            return_episode_rewards=True,
+        )
+
+    def _log_results(self, episode_rewards, episode_lengths):
+        """
+        Handles logging the results of evaluation, similar to the base class implementation.
+        """
+        if self.log_path is not None:
+            assert isinstance(episode_rewards, list)
+            assert isinstance(episode_lengths, list)
+            self.evaluations_timesteps.append(self.num_timesteps)
+            self.evaluations_results.append(episode_rewards)
+            self.evaluations_length.append(episode_lengths)
+
+            np.savez(
+                self.log_path,
+                timesteps=self.evaluations_timesteps,
+                results=self.evaluations_results,
+                ep_lengths=self.evaluations_length,
+            )
+
+        mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
+        mean_ep_length, std_ep_length = np.mean(episode_lengths), np.std(
+            episode_lengths
+        )
+        self.last_mean_reward = float(mean_reward)
+
+        if self.verbose >= 1:
+            print(
+                f"Eval num_timesteps={self.num_timesteps}, "
+                f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}"
+            )
+            print(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
+
+        # Add to current Logger
+        self.logger.record("eval/mean_reward", float(mean_reward))
+        self.logger.record("eval/mean_ep_length", mean_ep_length)
+
+        # Dump log so the evaluation results are printed with the correct timestep
+        self.logger.record(
+            "time/total_timesteps", self.num_timesteps, exclude="tensorboard"
+        )
+        self.logger.dump(self.num_timesteps)
+
+        # Check for new best model and perform any additional callbacks
+        self._handle_new_best(mean_reward)
+        self._perform_additional_callbacks()
+
+    def _handle_new_best(self, mean_reward):
+        if mean_reward > self.best_mean_reward:
+            if self.verbose >= 1:
+                print("New best mean reward!")
+            if self.best_model_save_path:
+                self.model.save(os.path.join(self.best_model_save_path, "best_model"))
+            self.best_mean_reward = mean_reward
+
+    def _perform_additional_callbacks(self):
+        if self.callback_on_new_best:
+            self.callback_on_new_best.on_step()
