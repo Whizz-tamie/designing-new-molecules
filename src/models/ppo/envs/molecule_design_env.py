@@ -67,9 +67,10 @@ class MoleculeDesignEnv(gym.Env):
 
         # Original observation space dimension for fingerprint vector
         original_obs_dim = 1024
+        action_mask_dim = self.num_templates
 
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(original_obs_dim,), dtype=np.float32
+            low=0, high=1, shape=(original_obs_dim + action_mask_dim,), dtype=np.float32
         )
 
         self.reaction_manager = ReactionManager(self.templates, self.reactants)
@@ -148,9 +149,11 @@ class MoleculeDesignEnv(gym.Env):
         arr = np.zeros((1024,), dtype=np.int32)
         DataStructs.ConvertToNumpyArray(fingerprint, arr)
 
+        action_mask = self.action_masks()
+
         logger.debug("Getting the observation for reactant: %s", smiles)
 
-        return arr.astype(np.float32)
+        return np.concatenate((arr.astype(np.float32), action_mask), axis=0)
 
     def action_masks(self):
         """
