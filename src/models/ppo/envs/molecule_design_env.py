@@ -55,7 +55,7 @@ class MoleculeDesignEnv(gym.Env):
         self.use_multidiscrete = use_multidiscrete
         if self.use_multidiscrete:
             self.action_space = spaces.MultiDiscrete(
-                [self.num_templates + 1, self.num_reactants]
+                [self.num_templates, self.num_reactants]
             )
         else:
             self.templates = {
@@ -63,7 +63,7 @@ class MoleculeDesignEnv(gym.Env):
             }
             self.templates = {i: v for i, (k, v) in enumerate(self.templates.items())}
             self.num_templates = len(self.templates)
-            self.action_space = spaces.Discrete(self.num_templates + 1)
+            self.action_space = spaces.Discrete(self.num_templates)
 
         # Original observation space dimension for fingerprint vector
         original_obs_dim = 1024
@@ -202,9 +202,9 @@ class MoleculeDesignEnv(gym.Env):
                 reactant_index,
             )
 
-            if template_index == self.num_templates:  # Stop action
-                logger.info("Stop action taken.")
-                return self._get_obs(), 0.0, False, True, self._get_info()
+            # if template_index == self.num_templates:  # Stop action
+            #   logger.info("Stop action taken.")
+            #  return self._get_obs(), 0.0, False, True, self._get_info()
 
             template = self.templates.get(template_index)
             if not template:
@@ -281,7 +281,7 @@ class MoleculeDesignEnv(gym.Env):
             reward = delta_qed
         else:
             # Penalty for invalid actions leading to invalid molecule
-            reward = -1
+            reward = 0
 
         return round(reward, 3)
 
