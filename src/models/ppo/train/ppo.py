@@ -44,7 +44,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 PPO on the MoleculeDesign-v1 environment with extended observation space (action_mask)",
+        notes="Running SB3 PPO on the MoleculeDesign-v1 environment with huge negative reward for invalid actions and a stop action",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",

@@ -280,6 +280,7 @@ class MoleculeDesignEnv(gym.Env):
             delta_qed = current_qed - self.previous_qed
             reward = delta_qed
         else:
+            # Penalty for invalid actions leading to invalid molecule
             reward = -1
 
         return round(reward, 3)
