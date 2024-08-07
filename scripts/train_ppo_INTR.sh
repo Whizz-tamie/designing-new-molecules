@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J RL_td3
+#SBATCH -J PPO_test
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-GTJ21-SL2-CPU
 #! How many whole nodes should be allocated?
@@ -60,16 +60,13 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv/
 #! Insert additional module load commands after this line if needed:
 
 #! Full path to application executable: 
-application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/pgfs/train/main_script.py"
-
-#! Full path to application executable: 
-application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/ppo/train/ppo.py"
+application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/ppo/train/multi_ppo.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=PPO_QED_test6
+EXPERIMENT_NAME=PPO_QED_test7
 
 #! Define wandb run id:
-RUN_ID=ppo_run.test6
+RUN_ID=ppo_run.test7
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\" --run_id \"$RUN_ID\""

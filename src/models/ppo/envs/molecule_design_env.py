@@ -77,6 +77,7 @@ class MoleculeDesignEnv(gym.Env):
         # Variables for reward function
         self.previous_qed = 0.0
         self.done = False
+        self.initial_qed = 0
 
         logger.info("MoleculeDesignEnv instance created...")
 
@@ -114,8 +115,10 @@ class MoleculeDesignEnv(gym.Env):
         retry_count = 0
         while not valid_molecule and retry_count < 10:
             self.current_state = self.np_random.choice(list(self.reactants))
-            if self._validate_smiles(self.current_state):
+            mol = self._validate_smiles(self.current_state)
+            if mol:
                 valid_molecule = True
+                self.initial_qed = QED.qed(mol)
             retry_count += 1
         if not valid_molecule:
             raise ValueError(

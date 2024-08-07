@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J MultiWorkers_PPO_run0
+#SBATCH -J MultiWorkers_PPO_run4
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-GTJ21-SL2-GPU
 #! How many whole nodes should be allocated?
@@ -63,10 +63,10 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/ppo/train/multi_ppo.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=MultiWorkers_PPO_QED_v0
+EXPERIMENT_NAME=MultiWorkers_PPO_QED_v4
 
 #! Define wandb run id:
-RUN_ID=sb3_ppo_run.4
+RUN_ID=sb3_ppo_run.9
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\" --run_id \"$RUN_ID\""
