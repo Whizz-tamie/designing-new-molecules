@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J MultiWorkers_A2C_run0
+#SBATCH -J MultiWorkers_A2C_run1
 #! Which project should be charged:
 #SBATCH -A MLMI-gtj21-SL2-CPU
 #SBATCH -p icelake
@@ -20,7 +20,7 @@
 #! The Ice Lake (icelake) nodes have 76 CPUs (cores) each and
 #! 3380 MiB of memory per CPU.
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=10
 #! How much wallclock time will be required?
 #SBATCH --time=02:00:00
 #! What types of email messages do you wish to receive?
@@ -63,10 +63,10 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/ppo/train/A2C.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=MultiWorkers_A2C_QED_multienvtest2
+EXPERIMENT_NAME=MultiWorkers_A2C_QED_multienvtest10
 
 #! Define wandb run id:
-RUN_ID=sb3_a2c_run.multienvtest2
+RUN_ID=sb3_a2c_run.multienvtest10
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\" --run_id \"$RUN_ID\""
@@ -77,7 +77,7 @@ workdir="/rds/user/gtj21/hpc-work/designing-new-molecules"  # $SLURM_SUBMIT_DIR:
 
 #! Are you using OpenMP (NB this is unrelated to OpenMPI)? If so increase this
 #! safe value to no more than 76:
-export OMP_NUM_THREADS=1
+export OMP_NUM_THREADS=10
 
 #! Number of MPI tasks to be started by the application per node and in total (do not change):
 np=$[${numnodes}*${mpi_tasks_per_node}]

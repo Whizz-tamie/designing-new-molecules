@@ -11,7 +11,7 @@ from wandb.integration.sb3 import WandbCallback
 import src.models.ppo.config.config as config
 import wandb
 from src.models.pgfs.logging_config import setup_logging
-from src.models.ppo.utility.sb3_callbacks import (
+from src.models.ppo.utility.multienv_sb3_callbacks import (
     CustomEvalCallback,
     CustomWandbCallback,
     PruningCallback,
@@ -43,7 +43,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 PPO on the MoleculeDesign-v1 environment using 4 multi-workers",
+        notes="Running SB3 PPO on the MoleculeDesign-v1 environment using n_envs=1 with baseline reward function",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",
@@ -71,7 +71,7 @@ def main(experiment_name, run_id):
     # Create parallel environments for training
     env = make_vec_env(
         config.ENV_NAME,
-        n_envs=4,  # Adjust based on your resources
+        n_envs=config.N_ENVS,
         env_kwargs=env_kwargs,
         monitor_dir=os.path.join(config.LOG_DIR, f"run_{run_id}"),
     )

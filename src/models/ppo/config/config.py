@@ -12,19 +12,20 @@ TEMPLATE_FILE = "data/new_data/templates.pkl"
 ENV_NAME = "MoleculeDesign-v1"
 MAX_STEPS = 5
 USE_MULTIDISCRETE = False
+N_ENVS = 1
 
 # Directories for logging and saving models
 BASE_DIR = "src/models/ppo/"
 LOG_DIR = BASE_DIR + "logs/"
 
 # PPO configuration
-TOTAL_TIMESTEPS = 500000
+TOTAL_TIMESTEPS = 1000000
 POLICY_TYPE = "MlpPolicy"
 
 # Callback configuration
 GRADIENT_SAVE_FREQ = 100
 MODEL_SAVE_FREQ = 5000
-EVAL_FREQ = 50000
+EVAL_FREQ = 100000
 DETERMINISTIC = True
 RENDER = False
 N_EVAL_EPISODES = 7

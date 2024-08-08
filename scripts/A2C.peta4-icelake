@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J MultiWorkers_A2C_run0
+#SBATCH -J MultiWorkers_A2C_run1
 #! Which project should be charged:
 #SBATCH -A MLMI-gtj21-SL2-CPU
 #SBATCH -p icelake
@@ -63,10 +63,10 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/ppo/train/A2C.py"
 
 #! Define experiment name:
-EXPERIMENT_NAME=MultiWorkers_A2C_QED_v0
+EXPERIMENT_NAME=MultiWorkers_A2C_QED_v1
 
 #! Define wandb run id:
-RUN_ID=sb3_a2c_run.0
+RUN_ID=sb3_a2c_run.1
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\" --run_id \"$RUN_ID\""

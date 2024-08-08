@@ -53,10 +53,11 @@ class CustomWandbCallback(BaseCallback):
         self.total_episodes = 0
 
     def _on_training_start(self):
-        num_envs = self.training_env.num_envs
-        self.num_envs = num_envs  # Store the number of environments
-        self.episode_rewards = [[] for _ in range(num_envs)]
-        self.episode_qeds = [[] for _ in range(num_envs)]
+        self.num_envs = self.training_env.num_envs
+        self.episode_rewards = [[] for _ in range(self.num_envs)]
+        self.episode_qeds = [[] for _ in range(self.num_envs)]
+        self.initial_reactant_qeds = [0.0] * self.num_envs  # Initialize initial QEDs
+        self.episode_qed_logged = [False] * self.num_envs  # Initialize QED logged flags
 
     def _on_step(self) -> bool:
         rewards = self.locals["rewards"]
@@ -68,6 +69,13 @@ class CustomWandbCallback(BaseCallback):
             info = infos[i]
 
             self.episode_rewards[i].append(reward)
+
+            # Add initial QED to episode QED once per episode
+            if not self.episode_qed_logged[i]:
+                initial_qed = self.training_env.get_attr("initial_qed")[i]
+                self.episode_qeds[i].append(initial_qed)
+                self.episode_qed_logged[i] = True
+
             qed = info.get("QED", 0)
             self.episode_qeds[i].append(qed)
 
@@ -123,6 +131,9 @@ class CustomWandbCallback(BaseCallback):
     def _reset_episode_metrics(self, env_index):
         self.episode_rewards[env_index] = []
         self.episode_qeds[env_index] = []
+        self.episode_qed_logged[env_index] = (
+            False  # Reset QED logged flag for new episode
+        )
 
     def _on_training_end(self) -> None:
         overall_avg_reward = np.mean(self.total_rewards) if self.total_rewards else 0
