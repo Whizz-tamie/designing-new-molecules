@@ -56,7 +56,6 @@ class CustomWandbCallback(BaseCallback):
         self.num_envs = self.training_env.num_envs
         self.episode_rewards = [[] for _ in range(self.num_envs)]
         self.episode_qeds = [[] for _ in range(self.num_envs)]
-        self.initial_reactant_qeds = [0.0] * self.num_envs  # Initialize initial QEDs
         self.episode_qed_logged = [False] * self.num_envs  # Initialize QED logged flags
 
     def _on_step(self) -> bool:
