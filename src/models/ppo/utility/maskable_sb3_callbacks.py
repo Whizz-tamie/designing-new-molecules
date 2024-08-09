@@ -44,80 +44,96 @@ class CustomWandbCallback(BaseCallback):
     def __init__(self, gamma: float, verbose=0):
         super().__init__(verbose)
         self.gamma = gamma
-        self.episode_rewards = []
-        self.episode_qeds = []
-        self.episode_actions = []
+        self.episode_rewards = None
+        self.episode_qeds = None
+        self.max_reward = float("-inf")
+        self.max_qed = float("-inf")
         self.total_rewards = []
         self.total_qeds = []
-        self.total_actions = []
         self.total_steps = 0
-        self.episode_count = 0
-        self.episode_steps = 0
+        self.total_episodes = 0
+
+    def _on_training_start(self):
+        self.num_envs = self.training_env.num_envs
+        self.episode_rewards = [[] for _ in range(self.num_envs)]
+        self.episode_qeds = [[] for _ in range(self.num_envs)]
+        self.episode_qed_logged = [False] * self.num_envs  # Initialize QED logged flags
 
     def _on_step(self) -> bool:
-        reward = self.locals["rewards"][0]
-        action = self.locals["actions"][0]
-        self.episode_rewards.append(reward)
-        self.episode_actions.append(action)
+        rewards = self.locals["rewards"]
+        infos = self.locals["infos"]
 
-        qed = self.locals["infos"][0].get("QED", 0)
-        self.episode_qeds.append(qed)
+        for i in range(len(rewards)):
+            self.total_steps += 1
+            reward = rewards[i]
+            info = infos[i]
 
-        self.episode_steps += 1
-        self.total_steps += 1
+            self.episode_rewards[i].append(reward)
 
-        # Check if the episode is done
-        if "episode" in self.locals["infos"][0].keys():
-            self.episode_count += 1
-            self._log_episode_metrics()
-            self._reset_episode_metrics()
+            # Add initial QED to episode QED once per episode
+            if not self.episode_qed_logged[i]:
+                initial_qed = self.training_env.get_attr("initial_qed")[i]
+                self.episode_qeds[i].append(initial_qed)
+                self.episode_qed_logged[i] = True
 
-        wandb.log(
-            {
-                "step_reward": reward,
-                "step_qed": qed,
-                "step_action": action,
-                "total_steps": self.total_steps,
-            }
-        )
+            qed = info.get("QED", 0)
+            self.episode_qeds[i].append(qed)
+
+            # Log step reward and QED for this step
+            wandb.log(
+                {
+                    "step_reward": reward,
+                    "step_qed": qed,
+                    "total_steps": self.total_steps,
+                }
+            )
+
+            # Check if the episode is done for this environment
+            if "episode" in info.keys():
+                self.total_episodes += 1
+
+                episode_max_reward = max(self.episode_rewards[i])
+                episode_max_qed = max(self.episode_qeds[i])
+
+                # Update global maxima if this episode's maxima are higher
+                if episode_max_reward > self.max_reward:
+                    self.max_reward = episode_max_reward
+                if episode_max_qed > self.max_qed:
+                    self.max_qed = episode_max_qed
+
+                total_episode_reward = sum(self.episode_rewards[i])
+                total_episode_qed = sum(self.episode_qeds[i])
+
+                self.total_rewards.append(total_episode_reward)
+                self.total_qeds.append(total_episode_qed)
+
+                # Calculate the average reward and QED for this episode only
+                avg_episode_reward = total_episode_reward / len(self.episode_rewards[i])
+                avg_episode_qed = total_episode_qed / len(self.episode_qeds[i])
+
+                # Log the total and average rewards for this episode
+                wandb.log(
+                    {
+                        "total_reward": total_episode_reward,
+                        "avg_reward": avg_episode_reward,
+                        "total_qed": total_episode_qed,
+                        "avg_qed": avg_episode_qed,
+                        "episode": self.total_episodes,
+                        "total_steps": self.total_steps,
+                    }
+                )
+
+                # Reset the episode metrics
+                self._reset_episode_metrics(i)
 
         return True
 
-    def _log_episode_metrics(self):
-        total_reward = sum(self.episode_rewards)
-        avg_reward = np.mean(self.episode_rewards)
-        max_reward = max(self.episode_rewards, default=0)
-        total_qed = sum(self.episode_qeds)
-        avg_qed = np.mean(self.episode_qeds)
-        max_qed = max(self.episode_qeds, default=0)
-        discounted_return = sum(
-            self.gamma**i * r for i, r in enumerate(self.episode_rewards)
+    def _reset_episode_metrics(self, env_index):
+        self.episode_rewards[env_index] = []
+        self.episode_qeds[env_index] = []
+        self.episode_qed_logged[env_index] = (
+            False  # Reset QED logged flag for new episode
         )
-
-        wandb.log(
-            {
-                "episode": self.episode_count,
-                "total_reward": total_reward,
-                "avg_reward": avg_reward,
-                "max_reward": max_reward,
-                "total_qed": total_qed,
-                "avg_qed": avg_qed,
-                "max_qed": max_qed,
-                "episode_steps": self.episode_steps,
-                "total_steps": self.total_steps,
-                "discounted_return": discounted_return,
-            }
-        )
-
-        self.total_rewards.append(total_reward)
-        self.total_qeds.append(total_qed)
-        self.total_actions.extend(self.episode_actions)
-
-    def _reset_episode_metrics(self):
-        self.episode_rewards = []
-        self.episode_qeds = []
-        self.episode_actions = []
-        self.episode_steps = 0
 
     def _on_training_end(self) -> None:
         overall_avg_reward = np.mean(self.total_rewards) if self.total_rewards else 0
@@ -126,8 +142,11 @@ class CustomWandbCallback(BaseCallback):
         # Log overall training metrics
         wandb.log(
             {
+                "overall_max_reward": self.max_reward,
+                "overall_max_qed": self.max_qed,
                 "overall_avg_reward": overall_avg_reward,
                 "overall_avg_qed": overall_avg_qed,
+                "total_episodes": self.total_episodes,
                 "total_steps": self.total_steps,
             }
         )

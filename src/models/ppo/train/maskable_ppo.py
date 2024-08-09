@@ -5,8 +5,7 @@ import os
 import gymnasium as gym
 from sb3_contrib import MaskablePPO
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.env_util import make_vec_env
 from wandb.integration.sb3 import WandbCallback
 
 import src.models.ppo.config.config as config
@@ -61,33 +60,37 @@ def main(experiment_name, run_id):
 
     logger.info(f"Experiment '{experiment_name}' with run ID '{run_id}' started.")
 
-    env = gym.make(
+    env_kwargs = {
+        "reactant_file": config.REACTANT_FILE,
+        "template_file": config.TEMPLATE_FILE,
+        "max_steps": config.MAX_STEPS,
+        "use_multidiscrete": config.USE_MULTIDISCRETE,
+        "render_mode": "human",
+    }
+
+    # Create parallel environments for training
+    env = make_vec_env(
         config.ENV_NAME,
-        reactant_file=config.REACTANT_FILE,
-        template_file=config.TEMPLATE_FILE,
-        max_steps=config.MAX_STEPS,
-        use_multidiscrete=config.USE_MULTIDISCRETE,
+        n_envs=config.N_ENVS,
+        env_kwargs=env_kwargs,
+        monitor_dir=os.path.join(config.LOG_DIR, f"run_{run_id}"),
     )
 
-    env = Monitor(
-        env,
-        filename=os.path.join(config.LOG_DIR, f"run_{run_id}/monitor.csv"),
-    )
-    env = DummyVecEnv([lambda: env])
+    eval_env_kwargs = {
+        "reactant_file": config.EVAL_REACTANT_FILE,
+        "template_file": config.TEMPLATE_FILE,
+        "max_steps": config.MAX_STEPS,
+        "use_multidiscrete": config.USE_MULTIDISCRETE,
+        "render_mode": "human",
+    }
 
-    eval_env = gym.make(
+    # Create a single environment for evaluation
+    eval_env = make_vec_env(
         config.ENV_NAME,
-        reactant_file=config.EVAL_REACTANT_FILE,
-        template_file=config.TEMPLATE_FILE,
-        max_steps=config.MAX_STEPS,
-        use_multidiscrete=config.USE_MULTIDISCRETE,
-        render_mode="human",
+        n_envs=1,
+        env_kwargs=eval_env_kwargs,
+        monitor_dir=os.path.join(config.LOG_DIR, f"run_{run_id}/eval"),
     )
-    eval_env = Monitor(
-        eval_env,
-        filename=os.path.join(config.LOG_DIR, f"run_{run_id}/eval_monitor.csv"),
-    )
-    eval_env = DummyVecEnv([lambda: eval_env])
 
     # Check for a previous checkpoint to resume training
     latest_checkpoint = find_latest_checkpoint(paths["model_save_path"])
