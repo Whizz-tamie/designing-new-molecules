@@ -43,7 +43,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 PPO on the MoleculeDesign-v1 environment using n_envs=1 with huge egative reward for invalid actions",
+        notes="Running SB3 PPO on the MoleculeDesign-v1 environment using n_envs=1 and baseline reward function",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",
@@ -137,7 +137,7 @@ def main(experiment_name, run_id):
         render=config.RENDER,
     )
 
-    custom_wandb_callback = CustomWandbCallback(gamma=model.gamma)
+    custom_wandb_callback = CustomWandbCallback()
 
     callback = CallbackList(
         [

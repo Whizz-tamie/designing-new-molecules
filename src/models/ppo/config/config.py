@@ -2,7 +2,7 @@
 import os
 
 # WandB configuration
-WANDB_PROJECT = "Designing new molecules with RL"
+WANDB_PROJECT = "MolSynthRL"
 WANDB_ENTITY = "whizz"
 
 # Environment configuration
