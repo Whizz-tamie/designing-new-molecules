@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J Maskable_PPO_run0
+#SBATCH -J NegPenalty_PPO_run1
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-GTJ21-SL2-GPU
 #! How many whole nodes should be allocated?
@@ -60,10 +60,10 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 #! Insert additional module load commands after this line if needed:
 
 #! Define experiment name:
-EXPERIMENT_NAME=Maskable_PPO_v0
+EXPERIMENT_NAME=NegPenalty_PPO_v1
 
 #! Define wandb run id:
-RUN_ID=sb3_ppo_run.v4
+RUN_ID=sb3_ppo_run.v5
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\" --run_id \"$RUN_ID\""
@@ -112,7 +112,7 @@ temp_worktree="/rds/user/gtj21/hpc-work/designing-new-molecules-worktree-$SLURM_
 trap 'git worktree remove $temp_worktree' EXIT
 
 # Create the temporary worktree to isolate the job
-COMMIT_HASH=94c0132651a2ca161c8065bb41ffa8ec812d8982
+COMMIT_HASH=<COMMIT_HASH>
 git worktree add $temp_worktree $COMMIT_HASH
 
 # Change to the worktree directory
@@ -133,7 +133,7 @@ LOGFILE_STDOUT="$workdir/src/models/ppo/logs/slurm/$SLURM_JOB_NAME.$JOBID.out"
 LOGFILE_STDERR="$workdir/src/models/ppo/logs/slurm/$SLURM_JOB_NAME.$JOBID.err"
 
 # Explicitly set the application path relative to the worktree
-application="$temp_worktree/src/models/ppo/train/maskable_ppo.py"
+application="$temp_worktree/src/models/ppo/train/multi_ppo.py"
 
 CMD="python3 -u $application $options > $LOGFILE_STDOUT 2> $LOGFILE_STDERR"
 
