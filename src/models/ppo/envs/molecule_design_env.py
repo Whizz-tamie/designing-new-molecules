@@ -55,7 +55,7 @@ class MoleculeDesignEnv(gym.Env):
         self.use_multidiscrete = use_multidiscrete
         if self.use_multidiscrete:
             self.action_space = spaces.MultiDiscrete(
-                [self.num_templates, self.num_reactants]
+                [self.num_templates + 1, self.num_reactants]
             )
         else:
             self.templates = {
@@ -63,19 +63,13 @@ class MoleculeDesignEnv(gym.Env):
             }
             self.templates = {i: v for i, (k, v) in enumerate(self.templates.items())}
             self.num_templates = len(self.templates)
-            self.action_space = spaces.Discrete(self.num_templates)
+            self.action_space = spaces.Discrete(self.num_templates + 1)
 
         # Original observation space dimension for fingerprint vector
         original_obs_dim = 1024
 
-        # Additional mask dimension
-        mask_dim = self.num_templates
-
-        # Concatenated observation space
-        extended_obs_dim = original_obs_dim + mask_dim
-
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(extended_obs_dim,), dtype=np.float32
+            low=0, high=1, shape=(original_obs_dim,), dtype=np.float32
         )
 
         self.reaction_manager = ReactionManager(self.templates, self.reactants)
@@ -162,13 +156,7 @@ class MoleculeDesignEnv(gym.Env):
 
         logger.debug("Getting the observation for reactant: %s", smiles)
 
-        # Get action mask
-        action_mask = self.action_masks().astype(np.float32)
-
-        # Concatenate fingerprint with mask
-        extended_obs = np.concatenate([arr.astype(np.float32), action_mask])
-
-        return extended_obs
+        return arr.astype(np.float32)
 
     def action_masks(self):
         """
@@ -220,15 +208,15 @@ class MoleculeDesignEnv(gym.Env):
                 reactant_index,
             )
 
-            # if template_index == self.num_templates:  # Stop action
-            #    logger.info("Stop action taken.")
-            #    return (
-            #        np.zeros(self.observation_space.shape[0], dtype=np.float32),
-            #        0.0,
-            #        False,
-            #        True,
-            #        {"stop action": True},
-            #    )
+            if template_index == self.num_templates:  # Stop action
+                logger.info("Stop action taken.")
+                return (
+                    np.zeros(self.observation_space.shape[0], dtype=np.float32),
+                    0.0,
+                    False,
+                    True,
+                    {"stop action": True},
+                )
 
             template = self.templates.get(template_index)
             if not template:
@@ -305,7 +293,7 @@ class MoleculeDesignEnv(gym.Env):
             reward = delta_qed
         else:
             # Penalty for invalid actions leading to invalid molecule
-            reward = 0
+            reward = -1
 
         return round(reward, 3)
 
