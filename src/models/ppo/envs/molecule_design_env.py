@@ -68,8 +68,14 @@ class MoleculeDesignEnv(gym.Env):
         # Original observation space dimension for fingerprint vector
         original_obs_dim = 1024
 
+        # Additional mask dimension
+        mask_dim = self.num_templates
+
+        # Concatenated observation space
+        extended_obs_dim = original_obs_dim + mask_dim
+
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(original_obs_dim,), dtype=np.float32
+            low=0, high=1, shape=(extended_obs_dim,), dtype=np.float32
         )
 
         self.reaction_manager = ReactionManager(self.templates, self.reactants)
@@ -156,7 +162,13 @@ class MoleculeDesignEnv(gym.Env):
 
         logger.debug("Getting the observation for reactant: %s", smiles)
 
-        return arr.astype(np.float32)
+        # Get action mask
+        action_mask = self.action_masks().astype(np.float32)
+
+        # Concatenate fingerprint with mask
+        extended_obs = np.concatenate([arr.astype(np.float32), action_mask])
+
+        return extended_obs
 
     def action_masks(self):
         """
