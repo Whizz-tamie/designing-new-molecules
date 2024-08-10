@@ -4,6 +4,10 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import seaborn as sns
 from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
 from sb3_contrib.common.maskable.evaluation import evaluate_policy
 from stable_baselines3.common.callbacks import BaseCallback
@@ -41,17 +45,17 @@ class PruningCallback(BaseCallback):
 
 
 class CustomWandbCallback(BaseCallback):
-    def __init__(self, gamma: float, verbose=0):
+    def __init__(self, verbose=0):
         super().__init__(verbose)
-        self.gamma = gamma
         self.episode_rewards = None
         self.episode_qeds = None
-        self.max_reward = float("-inf")
         self.max_qed = float("-inf")
-        self.total_rewards = []
-        self.total_qeds = []
         self.total_steps = 0
         self.total_episodes = 0
+        self.actions_taken = []
+        self.qeds_observed = []
+        self.steps_observed = []
+        self.cumulative_reward = 0.0
 
     def _on_training_start(self):
         self.num_envs = self.training_env.num_envs
@@ -61,14 +65,17 @@ class CustomWandbCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         rewards = self.locals["rewards"]
+        actions = self.locals["actions"]
         infos = self.locals["infos"]
 
         for i in range(len(rewards)):
             self.total_steps += 1
             reward = rewards[i]
+            action = actions[i]
             info = infos[i]
 
             self.episode_rewards[i].append(reward)
+            self.actions_taken.append(action)
 
             # Add initial QED to episode QED once per episode
             if not self.episode_qed_logged[i]:
@@ -78,46 +85,37 @@ class CustomWandbCallback(BaseCallback):
 
             qed = info.get("QED", 0)
             self.episode_qeds[i].append(qed)
-
-            # Log step reward and QED for this step
-            wandb.log(
-                {
-                    "step_reward": reward,
-                    "step_qed": qed,
-                    "total_steps": self.total_steps,
-                }
-            )
+            self.qeds_observed.append(qed)
+            self.steps_observed.append(len(self.episode_rewards[i]))
 
             # Check if the episode is done for this environment
             if "episode" in info.keys():
                 self.total_episodes += 1
 
-                episode_max_reward = max(self.episode_rewards[i])
+                episode_length = len(self.episode_rewards[i])
                 episode_max_qed = max(self.episode_qeds[i])
 
                 # Update global maxima if this episode's maxima are higher
-                if episode_max_reward > self.max_reward:
-                    self.max_reward = episode_max_reward
                 if episode_max_qed > self.max_qed:
                     self.max_qed = episode_max_qed
 
                 total_episode_reward = sum(self.episode_rewards[i])
+                avg_episode_reward = total_episode_reward / episode_length
+
                 total_episode_qed = sum(self.episode_qeds[i])
+                avg_episode_qed = total_episode_qed / episode_length
 
-                self.total_rewards.append(total_episode_reward)
-                self.total_qeds.append(total_episode_qed)
+                self.cumulative_reward += total_episode_reward
 
-                # Calculate the average reward and QED for this episode only
-                avg_episode_reward = total_episode_reward / len(self.episode_rewards[i])
-                avg_episode_qed = total_episode_qed / len(self.episode_qeds[i])
-
-                # Log the total and average rewards for this episode
+                # Log the episode metrics
                 wandb.log(
                     {
                         "total_reward": total_episode_reward,
                         "avg_reward": avg_episode_reward,
                         "total_qed": total_episode_qed,
                         "avg_qed": avg_episode_qed,
+                        "max_qed": episode_max_qed,
+                        "episode_length": episode_length,
                         "episode": self.total_episodes,
                         "total_steps": self.total_steps,
                     }
@@ -136,20 +134,86 @@ class CustomWandbCallback(BaseCallback):
         )
 
     def _on_training_end(self) -> None:
-        overall_avg_reward = np.mean(self.total_rewards) if self.total_rewards else 0
-        overall_avg_qed = np.mean(self.total_qeds) if self.total_qeds else 0
+        # Plot the distribution of actions taken and QEDs observed
+        self.plot_action_distribution()
+        self.plot_qed_distribution()
+        self.plot_qed_boxplot()
 
         # Log overall training metrics
         wandb.log(
             {
-                "overall_max_reward": self.max_reward,
                 "overall_max_qed": self.max_qed,
-                "overall_avg_reward": overall_avg_reward,
-                "overall_avg_qed": overall_avg_qed,
                 "total_episodes": self.total_episodes,
                 "total_steps": self.total_steps,
+                "cumulative_reward": self.cumulative_reward,
             }
         )
+
+    def plot_action_distribution(self):
+        # Create a histogram using Plotly
+        fig = px.histogram(
+            self.actions_taken,
+            nbins=len(set(self.actions_taken)),
+            title="Distribution of Actions Taken",
+            labels={"x": "Action", "y": "Frequency"},
+            color_discrete_sequence=["#87CEEB"],
+        )
+
+        # Add outlines to the bins and update background color
+        fig.update_traces(marker_line_width=1, marker_line_color="black")
+        fig.update_layout(
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            xaxis=dict(showgrid=True, gridcolor="lightgray"),
+            yaxis=dict(showgrid=True, gridcolor="lightgray"),
+        )
+
+        wandb.log({"action_distribution": fig})  # Log the interactive plot to Wandb
+
+    def plot_qed_distribution(self):
+        # Create a histogram for QED values using Plotly
+        fig = px.histogram(
+            self.qeds_observed,
+            nbins=50,
+            title="Distribution of QED Values Observed",
+            labels={"x": "QED Value", "y": "Frequency"},
+            color_discrete_sequence=["#87CEEB"],
+        )
+
+        # Add outlines to the bins and update background color
+        fig.update_traces(marker_line_width=1, marker_line_color="black")
+        fig.update_layout(
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            xaxis=dict(showgrid=True, gridcolor="lightgray"),
+            yaxis=dict(showgrid=True, gridcolor="lightgray"),
+        )
+
+        wandb.log({"qed_distribution": fig})  # Log the interactive plot to Wandb
+
+    def plot_qed_boxplot(self):
+        # Create a DataFrame for easy plotting
+        data = pd.DataFrame({"Step": self.steps_observed, "QED": self.qeds_observed})
+
+        # Create a box plot using Plotly
+        fig = px.box(
+            data,
+            x="Step",
+            y="QED",
+            title="Distribution of QED Scores by Reaction Step",
+            labels={"x": "Reaction Step", "y": "QED Score"},
+            color_discrete_sequence=["#87CEEB"],
+        )
+
+        # Update background color
+        fig.update_layout(
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            xaxis=dict(showgrid=True, gridcolor="lightgray"),
+            yaxis=dict(showgrid=True, gridcolor="lightgray"),
+        )
+
+        wandb.log({"qed_boxplot": fig})  # Log the interactive plot to Wandb
 
 
 class CustomEvalCallback(MaskableEvalCallback):
