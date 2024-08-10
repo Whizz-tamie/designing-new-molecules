@@ -45,7 +45,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 A2C on the MoleculeDesign-v1 environment with n_env=10",
+        notes="Running SB3 A2C on the MoleculeDesign-v1 environment with n_env=10 and baseline reward function",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",
@@ -143,7 +143,7 @@ def main(experiment_name, run_id):
         render=config.RENDER,
     )
 
-    custom_wandb_callback = CustomWandbCallback(gamma=model.gamma)
+    custom_wandb_callback = CustomWandbCallback()
 
     callback = CallbackList(
         [

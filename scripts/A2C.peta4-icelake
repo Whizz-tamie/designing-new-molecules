@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J MultiWorkers_A2C_run2
+#SBATCH -J MultiWorkers_A2C_run0
 #! Which project should be charged:
 #SBATCH -A MLMI-gtj21-SL2-CPU
 #SBATCH -p icelake
@@ -59,14 +59,11 @@ source /rds/user/gtj21/hpc-work/miniconda3/etc/profile.d/conda.sh
 conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 #! Insert additional module load commands after this line if needed:
 
-#! Full path to application executable: 
-application="python3 -u /rds/user/gtj21/hpc-work/designing-new-molecules/src/models/ppo/train/A2C.py"
-
 #! Define experiment name:
-EXPERIMENT_NAME=MultiWorkers_A2C_QED_v2
+EXPERIMENT_NAME=Multiworkers_A2C_v0
 
 #! Define wandb run id:
-RUN_ID=sb3_a2c_run.2
+RUN_ID=sb3_a2c_run.v0
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\" --run_id \"$RUN_ID\""
@@ -92,7 +89,6 @@ export I_MPI_PIN_ORDER=scatter # Adjacent domains have minimal sharing of caches
 #! 3. I_MPI_PIN_PROCESSOR_LIST is ignored if I_MPI_PIN_DOMAIN is set.
 #! 4. If MPI tasks perform better when sharing caches/sockets, try I_MPI_PIN_ORDER=compact.
 
-
 #! Uncomment one choice for CMD below (add mpirun/mpiexec options if necessary):
 
 #! Choose this for a MPI code (possibly using OpenMP) using Intel MPI.
@@ -100,25 +96,46 @@ export I_MPI_PIN_ORDER=scatter # Adjacent domains have minimal sharing of caches
 
 #! Choose this for a pure shared-memory OpenMP parallel program on a single node:
 #! (OMP_NUM_THREADS threads will be created):
-CMD="$application $options"
+#! CMD="$application $options"
 
 #! Choose this for a MPI code (possibly using OpenMP) using OpenMPI:
 #CMD="mpirun -npernode $mpi_tasks_per_node -np $np $application $options"
-
 
 ###############################################################
 ### You should not have to change anything below this line ####
 ###############################################################
 
-cd $workdir
+# Define the path for the temporary worktree
+temp_worktree="/rds/user/gtj21/hpc-work/designing-new-molecules-worktree-$SLURM_JOB_ID"
+
+# Trap to ensure cleanup on termination
+trap 'git worktree remove $temp_worktree' EXIT
+
+# Create the temporary worktree to isolate the job
+COMMIT_HASH=<replace hash>
+git worktree add $temp_worktree $COMMIT_HASH
+
+# Change to the worktree directory
+cd $temp_worktree || { echo "Failed to change directory to worktree"; exit 1; }
 echo -e "Changed directory to `pwd`.\n"
-mkdir -p src/models/ppo/logs/slurm
+
+# Log the current Git commit hash and commit message being used
+echo "Full Git commit hash:"
+git rev-parse HEAD
+echo "Short Git commit and message:"
+git log -1 --pretty=format:"%h - %s"
+
+# Create log directory
+mkdir -p "$workdir/src/models/ppo/logs/slurm"
 JOBNAME=$SLURM_JOB_NAME
 JOBID=$SLURM_JOB_ID
-LOGFILE_STDOUT="src/models/ppo/logs/slurm/$SLURM_JOB_NAME.$JOBID.out"
-LOGFILE_STDERR="src/models/ppo/logs/slurm/$SLURM_JOB_NAME.$JOBID.err"
+LOGFILE_STDOUT="$workdir/src/models/ppo/logs/slurm/$SLURM_JOB_NAME.$JOBID.out"
+LOGFILE_STDERR="$workdir/src/models/ppo/logs/slurm/$SLURM_JOB_NAME.$JOBID.err"
 
-CMD="$application $options > $LOGFILE_STDOUT 2> $LOGFILE_STDERR"
+# Explicitly set the application path relative to the worktree
+application="$temp_worktree/src/models/ppo/train/A2C.py"
+
+CMD="python3 -u $application $options > $LOGFILE_STDOUT 2> $LOGFILE_STDERR"
 
 echo -e "JobID: $JOBID\n======"
 echo "Time: `date`"
@@ -126,7 +143,6 @@ echo "Running on master node: `hostname`"
 echo "Current directory: `pwd`"
 
 if [ "$SLURM_JOB_NODELIST" ]; then
-        #! Create a machine file:
         export NODEFILE=`generate_pbs_nodefile`
         cat $NODEFILE | uniq > machine.file.$JOBID
         echo -e "\nNodes allocated:\n================"
@@ -137,4 +153,7 @@ echo -e "\nnumtasks=$numtasks, numnodes=$numnodes, mpi_tasks_per_node=$mpi_tasks
 
 echo -e "\nExecuting command:\n==================\n$CMD\n"
 
-eval $CMD 
+eval $CMD
+
+# Explicit clean-up (in case the trap wasn't triggered)
+git worktree remove $temp_worktree
