@@ -43,7 +43,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 PPO on the MoleculeDesign-v1 environment using n_envs=1 and baseline reward function",
+        notes="Running SB3 PPO on the MoleculeDesign-v1 environment using n_envs=10 and baseline reward function",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",

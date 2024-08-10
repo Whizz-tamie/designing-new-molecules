@@ -12,7 +12,7 @@ TEMPLATE_FILE = "data/new_data/templates.pkl"
 ENV_NAME = "MoleculeDesign-v1"
 MAX_STEPS = 5
 USE_MULTIDISCRETE = False
-N_ENVS = 1
+N_ENVS = 10
 
 # Directories for logging and saving models
 BASE_DIR = "src/models/ppo/"

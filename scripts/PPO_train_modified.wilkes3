@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J Baseline_PPO_run0
+#SBATCH -J Multiworkers_PPO_run0
 #! Which project should be charged (NB Wilkes2 projects end in '-GPU'):
 #SBATCH -A MLMI-GTJ21-SL2-GPU
 #! How many whole nodes should be allocated?
@@ -60,10 +60,10 @@ conda activate /rds/user/gtj21/hpc-work/designing-new-molecules/molvenv
 #! Insert additional module load commands after this line if needed:
 
 #! Define experiment name:
-EXPERIMENT_NAME=Baseline_PPO_v0
+EXPERIMENT_NAME=Multiworkers_PPO_v0
 
 #! Define wandb run id:
-RUN_ID=sb3_ppo_run.v0
+RUN_ID=sb3_ppo_run.v1
 
 #! Run options for the application:
 options="--experiment_name \"$EXPERIMENT_NAME\" --run_id \"$RUN_ID\""
@@ -112,7 +112,7 @@ temp_worktree="/rds/user/gtj21/hpc-work/designing-new-molecules-worktree-$SLURM_
 trap 'git worktree remove $temp_worktree' EXIT
 
 # Create the temporary worktree to isolate the job
-COMMIT_HASH = 18fb68becac0c83abf663fd12db8622eb40f0c2e
+COMMIT_HASH = <update commit hash>
 git worktree add $temp_worktree $COMMIT_HASH
 
 # Change to the worktree directory
