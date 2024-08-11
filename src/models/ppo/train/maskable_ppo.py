@@ -43,7 +43,7 @@ def main(experiment_name, run_id):
         name=experiment_name,
         id=run_id,
         job_type="training",
-        notes="Running SB3 PPO on the MoleculeDesign-v1 environment with masked actions + extended_obs, a stop action, and -ve (-1) penalty for invalid actions.",
+        notes="Running SB3 PPO on the MoleculeDesign-v1 environment with masked actions + extended_obs, a stop action, and -ve (-1) penalty for invalid actions, target_kl = 0.02.",
         sync_tensorboard=True,
         save_code=True,
         resume="allow",
@@ -102,6 +102,7 @@ def main(experiment_name, run_id):
             policy=config.POLICY_TYPE,
             env=env,
             verbose=1,
+            target_kl=0.02,
             tensorboard_log=paths["tensorboard_log_dir"],
         )
         logger.info(f"No checkpoint found, starting training from scratch...")
