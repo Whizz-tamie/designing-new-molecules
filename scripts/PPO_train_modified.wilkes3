@@ -112,7 +112,7 @@ temp_worktree="/rds/user/gtj21/hpc-work/designing-new-molecules-worktree-$SLURM_
 trap 'git worktree remove $temp_worktree' EXIT
 
 # Create the temporary worktree to isolate the job
-COMMIT_HASH=<COMMIT_HASH>
+COMMIT_HASH=936ce62609f035b5f803ec9acb8486b4e5bbb3bb
 git worktree add $temp_worktree $COMMIT_HASH
 
 # Change to the worktree directory
