@@ -10,7 +10,7 @@
 
 #! sbatch directives begin here ###############################
 #! Name of the job:
-#SBATCH -J greedy_molsearch_uni
+#SBATCH -J greedy_molsearch_clogp
 #! Which project should be charged:
 #SBATCH -A MLMI-gtj21-SL2-CPU
 #SBATCH -p icelake
@@ -108,8 +108,8 @@ echo -e "Changed directory to `pwd`.\n"
 mkdir -p /rds/user/gtj21/hpc-work/designing-new-molecules/logs
 JOBNAME=$SLURM_JOB_NAME
 JOBID=$SLURM_JOB_ID
-LOGFILE_STDOUT="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/slurm/$SLURM_JOB_NAME.$JOBID.out"
-LOGFILE_STDERR="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/slurm/$SLURM_JOB_NAME.$JOBID.err"
+LOGFILE_STDOUT="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/recent/slurm/$SLURM_JOB_NAME.$JOBID.out"
+LOGFILE_STDERR="/rds/user/gtj21/hpc-work/designing-new-molecules/logs/recent/slurm/$SLURM_JOB_NAME.$JOBID.err"
 
 CMD="$application $options > $LOGFILE_STDOUT 2> $LOGFILE_STDERR"
 
